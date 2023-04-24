@@ -1,0 +1,29 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "RaftServer 0",
+            "request": "launch",
+            "mainClass": "com.wisc.raft.RaftServer",
+            "projectName": "raft",
+            "args": ["0", "8081","0_localhost_8081", "1_localhost_8082", "2_localhost_8083"]
+        },
+        {
+            "type": "java",
+            "name": "RaftServer 1",
+            "request": "launch",
+            "mainClass": "com.wisc.raft.RaftServer",
+            "projectName": "raft",
+            "args": ["1", "8082","0_localhost_8081", "1_localhost_8082", "2_localhost_8083"]
+        },
+        {
+            "type": "java",
+            "name": "RaftServer 2",
+            "request": "launch",
+            "mainClass": "com.wisc.raft.RaftServer",
+            "projectName": "raft",
+            "args": ["2", "8083", "0_localhost_8081", "1_localhost_8082", "2_localhost_8083"]
+        }
+    ]
+}

@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package org.wisc.raft.proto;
+import "google/protobuf/empty.proto";
+
+// service ServerHello{
+//   rpc GetFeature(SampleRequest) returns (SampleResponse);
+// }
+service ServerClientConnection{
+  rpc Get(Request) returns (Response);
+  rpc Put(Request) returns (Response);
+  rpc GetLeader(MetaDataRequest) returns(MetaDataResponse);
+  rpc talkBack(StatusUpdate) returns(google.protobuf.Empty);
+};
+
+message StatusUpdate{
+  string reqId = 1;
+  bool returnVal = 2;
+}
+
+message Request {
+  uint64 key = 1;
+  uint64 value = 2;
+  string commandType = 3;
+  Endpoint endpoint = 4;
+
+};
+
+message Response {
+    uint64 value = 1;
+    bool success = 2;
+};
+
+message MetaDataRequest{
+  string reqType = 1;
+}
+
+message Endpoint {
+  optional string host = 1;
+  optional sint32 port = 2;
+};
+
+
+message MetaDataResponse{
+  optional string host = 1;
+  optional uint32 port = 2;
+  optional uint32 server_id = 3;
+  optional bool success = 4;
+}
