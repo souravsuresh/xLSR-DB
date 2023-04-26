@@ -1,13 +1,10 @@
-package com.wisc.raft.basic;
+package com.wisc.raft.subcluster.basic;
 
 import com.wisc.raft.proto.Sample;
 import com.wisc.raft.proto.SampleServiceGrpc;
-import com.wisc.raft.service.Database;
-import com.wisc.raft.service.SampleDatabase;
+import com.wisc.raft.subcluster.service.SampleDatabase;
 import io.grpc.stub.StreamObserver;
 import org.wisc.raft.proto.Client;
-
-import java.util.List;
 
 public class SampleRPCService extends SampleServiceGrpc.SampleServiceImplBase {
     private SampleDatabase db;

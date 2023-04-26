@@ -1,7 +1,7 @@
-package com.wisc.raft.state;
+package com.wisc.raft.subcluster.state;
 
 import com.wisc.raft.proto.Raft;
-import com.wisc.raft.constants.Role;
+import com.wisc.raft.subcluster.constants.Role;
 import lombok.Getter;
 import lombok.Setter;
 

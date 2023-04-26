@@ -1,11 +1,11 @@
-package com.wisc.raft.server;
+package com.wisc.raft.subcluster.server;
 
-import com.wisc.raft.constants.Role;
+import com.wisc.raft.subcluster.constants.Role;
 import com.wisc.raft.proto.Raft;
 import com.wisc.raft.proto.RaftServiceGrpc;
-import com.wisc.raft.service.Database;
-import com.wisc.raft.service.RaftConsensusService;
-import com.wisc.raft.state.NodeState;
+import com.wisc.raft.subcluster.service.Database;
+import com.wisc.raft.subcluster.service.RaftConsensusService;
+import com.wisc.raft.subcluster.state.NodeState;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import javafx.util.Pair;

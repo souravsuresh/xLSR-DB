@@ -1,6 +1,5 @@
-package com.wisc.raft.client;
+package com.wisc.raft.subcluster.client;
 
-import com.wisc.raft.RaftServer;
 import com.wisc.raft.proto.Raft;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;

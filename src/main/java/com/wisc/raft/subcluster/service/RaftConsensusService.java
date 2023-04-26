@@ -1,9 +1,9 @@
-package com.wisc.raft.service;
+package com.wisc.raft.subcluster.service;
 
-import com.wisc.raft.constants.Role;
+import com.wisc.raft.subcluster.constants.Role;
 import com.wisc.raft.proto.Raft;
 import com.wisc.raft.proto.RaftServiceGrpc;
-import com.wisc.raft.server.Server;
+import com.wisc.raft.subcluster.server.Server;
 import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

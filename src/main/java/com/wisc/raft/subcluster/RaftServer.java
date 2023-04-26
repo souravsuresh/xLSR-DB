@@ -1,14 +1,11 @@
-package com.wisc.raft;
+package com.wisc.raft.subcluster;
 
 import com.wisc.raft.proto.Raft;
-import com.wisc.raft.server.Server;
-import com.wisc.raft.service.Database;
-import com.wisc.raft.service.RaftConsensusService;
-import com.wisc.raft.service.ServerClientConnectionService;
+import com.wisc.raft.subcluster.server.Server;
+import com.wisc.raft.subcluster.service.Database;
+import com.wisc.raft.subcluster.service.RaftConsensusService;
+import com.wisc.raft.subcluster.service.ServerClientConnectionService;
 import io.grpc.ServerBuilder;
-import lombok.extern.log4j.Log4j;
-import lombok.extern.log4j.Log4j2;
-import lombok.extern.slf4j.Slf4j;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

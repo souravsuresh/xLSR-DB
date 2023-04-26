@@ -1,6 +1,6 @@
-package com.wisc.raft.basic;
+package com.wisc.raft.subcluster.basic;
 
-import com.wisc.raft.RaftServer;
+import com.wisc.raft.subcluster.RaftServer;
 import com.wisc.raft.proto.Sample;
 import com.wisc.raft.proto.SampleServiceGrpc;
 import io.grpc.ManagedChannel;

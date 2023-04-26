@@ -1,4 +1,4 @@
-package com.wisc.raft.service;
+package com.wisc.raft.subcluster.service;
 
 import com.wisc.raft.proto.Sample;
 import lombok.Getter;

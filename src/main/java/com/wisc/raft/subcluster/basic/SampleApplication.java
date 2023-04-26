@@ -1,15 +1,13 @@
-package com.wisc.raft.basic;
+package com.wisc.raft.subcluster.basic;
 
-import com.wisc.raft.RaftServer;
+import com.wisc.raft.subcluster.RaftServer;
 import com.wisc.raft.proto.Sample;
-import com.wisc.raft.service.SampleDatabase;
+import com.wisc.raft.subcluster.service.SampleDatabase;
 import io.grpc.ServerBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
 
 public class SampleApplication {
     private static final Logger logger = LoggerFactory.getLogger(RaftServer.class);

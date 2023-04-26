@@ -1,6 +1,5 @@
-package com.wisc.raft.service;
+package com.wisc.raft.subcluster.service;
 
-import com.wisc.raft.RaftServer;
 import com.wisc.raft.proto.Raft;
 import org.iq80.leveldb.DB;
 import org.iq80.leveldb.Options;
@@ -14,8 +13,6 @@ import lombok.Getter;
 import lombok.Setter;
 
 import static org.iq80.leveldb.impl.Iq80DBFactory.factory;
-
-import java.util.*;
 
 @Getter
 @Setter

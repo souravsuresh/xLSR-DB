@@ -1,6 +1,5 @@
-package com.wisc.raft.client;
+package com.wisc.raft.subcluster.client;
 
-import com.google.common.util.concurrent.CycleDetectingLockFactory;
 import com.google.protobuf.Empty;
 import io.grpc.stub.StreamObserver;
 import lombok.Getter;
@@ -8,9 +7,6 @@ import lombok.Setter;
 import org.wisc.raft.proto.Client;
 import org.wisc.raft.proto.ServerClientConnectionGrpc;
 
-import java.util.HashSet;
-import java.util.Set;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 

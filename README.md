@@ -33,7 +33,7 @@ A more advanced project will implement features such as membership change; howev
 
 2. Spin up the servers. (We can change the port numbers and hostnames accrodingly).
 ```
-mvn exec:java -Dexec.mainClass="com.wisc.raft.RaftServer" -Dexec.args="1 8082 0_localhost_8081 1_localhost_8082 2_localhost_8083"
+mvn exec:java -Dexec.mainClass="com.wisc.raft.subcluster.RaftServer" -Dexec.args="1 8082 0_localhost_8081 1_localhost_8082 2_localhost_8083"
 ```
 ```
 Exaplanation of params:
@@ -45,7 +45,7 @@ args[2] = space seperated id_hostname_port covering all node details in cluster 
 
 3. [Optional] We can run client simulation script to simulate the writes.
 ```
-mvn exec:java -Dexec.mainClass="com.wisc.raft.client.ClientMachine" -Dexec.args="localhost 8082 1000 localhost 9000"
+mvn exec:java -Dexec.mainClass="client.com.wisc.raft.subcluster.ClientMachine" -Dexec.args="localhost 8082 1000 localhost 9000"
 ```
 ```
 Explanation of params:
