@@ -5,6 +5,8 @@ import com.wisc.raft.subcluster.server.Server;
 import com.wisc.raft.subcluster.service.Database;
 import com.wisc.raft.subcluster.service.RaftConsensusService;
 import com.wisc.raft.subcluster.service.ServerClientConnectionService;
+import com.wisc.raft.subcluster.storagestate.StorageState;
+import com.wisc.raft.subcluster.storagestate.UtilizationService;
 import io.grpc.ServerBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,13 +40,14 @@ public class RaftServer {
             Raft.ServerConnect server = Raft.ServerConnect.newBuilder().setServerId(serverId).setEndpoint(endpoint).build();
             serverList.add(server);
         }
-
         Server raftServer = new Server(args[0], database);
         raftServer.setCluster(serverList);
         ServerClientConnectionService clientConnectionService = new ServerClientConnectionService(raftServer);
         RaftConsensusService raftConsensusService = new RaftConsensusService(raftServer);
         logger.debug("[Sys Args] "+args.toString());
         io.grpc.Server server = ServerBuilder.forPort(Integer.parseInt(args[1])).addService(raftConsensusService).addService(clientConnectionService).build();
+        StorageState storageState = new StorageState("/Users/varun/Documents/DistFinalProject/", 1000000);
+        UtilizationService utilizationService = new UtilizationService(raftServer, storageState);
 
         //Start the server
         raftServer.init();

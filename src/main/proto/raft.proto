@@ -8,6 +8,20 @@ service RaftService{
   rpc AppendEntries(AppendEntriesRequest) returns (AppendEntriesResponse);
 };
 
+service UtilizationService{
+  rpc GetUtilization(UtilizationRequest) returns (UtilizationResponse);
+};
+
+message  UtilizationResponse{
+  string leaderId = 1;
+  optional Endpoint endpoint = 2;
+  float utilizationPercentage = 3;
+  optional uint32 returnVal=4;
+}
+
+message  UtilizationRequest{
+  string leaderId = 1;
+}
 message RequestVote {
   optional string candidateId = 1;
   optional uint64 term = 2;
