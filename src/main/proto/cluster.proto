@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package com.wisc.raft.proto;
+
+
+service LeaderService{
+  rpc GetLeaderConnect(RequestLeaderRPC) returns (ResponseLeaderRPC);
+}
+
+message RequestLeaderRPC{
+  string leaderId = 1;
+}
+
+message  ResponseLeaderRPC{
+  sint32 retValue = 1;
+  optional ClusterEndpoint clusterEndpoint = 2;
+}
+message ClusterEndpoint{
+  optional string host = 1;
+  optional sint32 port = 2;
+};
+
+message ClusterConnect {
+  optional sint32 clusterId = 1;
+  optional sint32 clusterLeaderId = 2;
+  optional ClusterEndpoint clusterEndpoint = 3;
+};
