@@ -13,7 +13,7 @@ message RequestLeaderRPC{
 
 message  ResponseLeaderRPC{
   sint32 retValue = 1;
-  optional ClusterEndpoint clusterEndpoint = 2;
+  optional ClusterConnect clusterConnect = 2;
 }
 message ClusterEndpoint{
   optional string host = 1;

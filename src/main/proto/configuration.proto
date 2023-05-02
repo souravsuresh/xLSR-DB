@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package com.wisc.raft.proto;
+import "cluster.proto";
+
+
+service AutoScale{
+  rpc requestUpScale(ScaleRequest) returns (ScaleResponse);
+  rpc requestDownScale(ScaleDownRequest) returns (ScaleResponse);
+}
+
+message ScaleDownRequest{
+  sint32 mergeCount = 1;
+  repeated ClusterConnect clusters=2;
+}
+message ScaleResponse{
+  bool isCreated = 1;
+  bool inProgress = 2;
+  ClusterConnect clusterDetails = 3;
+}
+
+message ScaleRequest{
+  sint32 clusterSize=1;
+  sint32 absoluteMajority=2;
+  //Can add read & write Majority
+}
+

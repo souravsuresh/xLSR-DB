@@ -18,6 +18,7 @@ public class LoadBalancerClusterConnectionService extends LeaderServiceGrpc.Lead
 
     Server server;
 
+    //TODO NULL CHECKSs
     @Override
     public void getLeaderConnect(Cluster.RequestLeaderRPC request, StreamObserver<Cluster.ResponseLeaderRPC> response) {
         String leaderId = request.getLeaderId();
@@ -28,7 +29,8 @@ public class LoadBalancerClusterConnectionService extends LeaderServiceGrpc.Lead
             if (leaderOpt.isPresent()) {
                 Raft.ServerConnect serverConnect = leaderOpt.get();
                 Cluster.ClusterEndpoint clusterEndpoint = Cluster.ClusterEndpoint.newBuilder().setHost(serverConnect.getEndpoint().getHost()).setPort(serverConnect.getEndpoint().getPort()).build();
-                responseLeaderBuilder.setRetValue(0).setClusterEndpoint(clusterEndpoint);
+                Cluster.ClusterConnect.Builder clusterConnect = Cluster.ClusterConnect.newBuilder().setClusterEndpoint(clusterEndpoint).setClusterId(this.server.getState().getClusterId()).setClusterLeaderId(Integer.parseInt(leaderId));
+                responseLeaderBuilder.setRetValue(0).setClusterConnect(clusterConnect);
             } else {
                 logger.error("[LoadBalancerClusterConnectionService] this cannot happen");
                 responseLeaderBuilder.setRetValue(-3);
@@ -44,7 +46,8 @@ public class LoadBalancerClusterConnectionService extends LeaderServiceGrpc.Lead
             if (leaderOpt.isPresent()) {
                 Raft.ServerConnect serverConnect = leaderOpt.get();
                 Cluster.ClusterEndpoint clusterEndpoint = Cluster.ClusterEndpoint.newBuilder().setHost(serverConnect.getEndpoint().getHost()).setPort(serverConnect.getEndpoint().getPort()).build();
-                responseLeaderBuilder.setClusterEndpoint(clusterEndpoint);
+                Cluster.ClusterConnect.Builder clusterConnect = Cluster.ClusterConnect.newBuilder().setClusterEndpoint(clusterEndpoint).setClusterId(this.server.getState().getClusterId()).setClusterLeaderId(Integer.parseInt(this.server.getState().getVotedFor()));
+                responseLeaderBuilder.setClusterConnect(clusterConnect);
             }
         }
 

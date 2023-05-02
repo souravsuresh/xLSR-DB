@@ -36,6 +36,17 @@ public class NodeState {
     private int totalVotes;
     private String leaderId;
 
+    private int clusterId;
+
+    public int getClusterId() {
+        return clusterId;
+    }
+
+    public void setClusterId(int clusterId) {
+        this.clusterId = clusterId;
+    }
+
+
     public NodeState(String nodeId) {
         this.currentTerm = 0;
         this.votedFor = null;

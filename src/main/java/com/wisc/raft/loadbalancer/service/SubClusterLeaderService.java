@@ -38,7 +38,7 @@ public class SubClusterLeaderService {
 
     }
     
-    private void makeCall(Cluster.ClusterConnect clusterConnect){
+    public void makeCall(Cluster.ClusterConnect clusterConnect){
         ManagedChannel channel = ManagedChannelBuilder.forAddress(clusterConnect.getClusterEndpoint().getHost(), clusterConnect.getClusterEndpoint().getPort()).usePlaintext().build();
         Cluster.RequestLeaderRPC requestLeader = Cluster.RequestLeaderRPC.newBuilder().setLeaderId(String.valueOf(clusterConnect.getClusterLeaderId())).build();
         try {
@@ -49,17 +49,26 @@ public class SubClusterLeaderService {
                 //Retry logic
                 logger.error("[SubClusterLeaderService] Hit a candidate, need to retry");
                 retryCount.put(clusterConnect.getClusterId(), retryCount.get(clusterConnect.getClusterId() + 1));
-                if(retryCount.get(clusterConnect.getClusterId()) < 3){
-                    makeCall(clusterConnect);
-                }
-                else{
+                if(retryCount.get(clusterConnect.getClusterId()) >= 3) {
+                    //Avoid recursive calls, so tackling in next cycle
                     logger.error("[SubClusterLeaderService] Hit a candidate, no more retries");
-                    return;
                 }
+
             }
             else if(retVal == -2){
-                //How to handle this
-                logger.error("[SubClusterLeaderService] Hit a follower, shall we assume");
+                logger.error("[SubClusterLeaderService] Hit a follower");
+                int c = retryCount.get(clusterConnect.getClusterId());
+                if(c + 1 < 3){
+                    retryCount.replace(clusterConnect.getClusterId(), c + 1);
+                    Cluster.ClusterConnect updatedClusterConnect = leaderResponse.getClusterConnect();
+                    subClusterMap.replace(clusterConnect.getClusterId(), updatedClusterConnect);
+
+                }
+                else{
+                    logger.error("[SubClusterLeaderService] Hit a follower, limit reached !");
+
+                }
+
             }
             else if(retVal == -3){
                 logger.error("[SubClusterLeaderService] This should never happen please check");
