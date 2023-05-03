@@ -19,9 +19,6 @@ public class LoadBalancerLiveLinessService {
 
     ConcurrentHashMap<Integer,Integer> checkStatus; // For now putting this here, need to be accessed by other service which needs to rest this to zero
 
-
-
-
     int retryLimit;
 
     //Assuming this comes from somewhere

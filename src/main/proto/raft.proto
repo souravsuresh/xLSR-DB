@@ -38,8 +38,8 @@ message ResponseVote {
 
 message Command {
   optional string commandType = 1;
-  optional sint64 key = 2;
-  optional sint64 value = 3;
+  optional string key = 2;
+  optional string value = 3;
 };
 
 message LogEntry {
