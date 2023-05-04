@@ -1,6 +1,7 @@
 package com.wisc.raft.subcluster.service;
 
 import com.wisc.raft.proto.Raft;
+import javafx.util.Pair;
 import org.iq80.leveldb.DB;
 import org.iq80.leveldb.Options;
 import org.slf4j.Logger;
@@ -8,7 +9,12 @@ import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+
 import lombok.Getter;
 import lombok.Setter;
 
@@ -18,9 +24,10 @@ import static org.iq80.leveldb.impl.Iq80DBFactory.factory;
 @Setter
 public class Database {
     private static final Logger logger = LoggerFactory.getLogger(Database.class);
-
     private String path;
     private DB db;
+
+    int keep = 3;
 
     public Database(String path) {
         Options options = new Options();
@@ -41,6 +48,11 @@ public class Database {
         return out.toByteArray();
     }
 
+    public static List<Raft.LogEntry> deserializeList(byte[] data) throws Exception {
+        ByteArrayInputStream in = new ByteArrayInputStream(data);
+        ObjectInputStream is = new ObjectInputStream(in);
+        return (List<Raft.LogEntry>) is.readObject();
+    }
     // Deserialize a byte array to an object
     public static Raft.LogEntry deserialize(byte[] data) throws Exception {
         ByteArrayInputStream in = new ByteArrayInputStream(data);
@@ -49,7 +61,8 @@ public class Database {
     }
 
     public int commit(Raft.LogEntry logEntry) {
-        byte[] keyBytes = ByteBuffer.allocate(Long.BYTES).putLong(logEntry.getCommand().getKey()).array();
+        long key = logEntry.getCommand().getKey();
+        byte[] keyBytes = ByteBuffer.allocate(Long.BYTES).putLong(key).array();
         if (Objects.isNull(keyBytes)) {
             logger.error("[Database] Key cannot not be serialized");
             return -1;
@@ -83,4 +96,22 @@ public class Database {
         }
         return 0;
     }
+
+    public boolean remove(long key){
+        byte[] keyBytes = ByteBuffer.allocate(Long.BYTES).putLong(key).array();
+        if (Objects.isNull(keyBytes)) {
+            logger.error("[Database] Object not available for delete");
+            return false;
+        }
+        try {
+            db.delete(keyBytes);
+        }
+        catch (Exception e) {
+            logger.error("[Database] Exception while deleting : " + e);
+            return false;
+        }
+        return true;
+    }
+
+
 }
