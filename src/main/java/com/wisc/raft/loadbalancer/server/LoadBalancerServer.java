@@ -3,13 +3,11 @@ package com.wisc.raft.loadbalancer.server;
 import com.wisc.raft.loadbalancer.dto.ReadLBObject;
 import com.wisc.raft.loadbalancer.service.LoadBalancerDatabase;
 import com.wisc.raft.loadbalancer.service.LoadBalancerLiveLinessService;
-import com.wisc.raft.proto.Cluster;
-import com.wisc.raft.proto.Loadbalancer;
-import com.wisc.raft.proto.Raft;
-import com.wisc.raft.proto.RaftServiceGrpc;
-import com.wisc.raft.subcluster.constants.Role;
-import com.wisc.raft.subcluster.service.RaftConsensusService;
-import com.wisc.raft.subcluster.state.NodeState;
+import com.wisc.raft.proto.*;
+import com.wisc.raft.loadbalancer.constants.Role;
+import com.wisc.raft.loadbalancer.service.RaftConsensusService;
+import com.wisc.raft.loadbalancer.service.LoadBalancerService;
+import com.wisc.raft.loadbalancer.state.NodeState;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import javafx.util.Pair;
@@ -63,6 +61,7 @@ public class LoadBalancerServer {
     private ScheduledFuture commitScheduler;
     private ScheduledFuture replyScheduler;
 
+    private static long lbRejectionRetries = 0;
 
     private ThreadPoolExecutor electionExecutor;
     private ThreadPoolExecutor heartBeatExecutor;
@@ -135,26 +134,25 @@ public class LoadBalancerServer {
     }
 
 
-    /*
     private void initiateReplyScheduleRPC(){
         if(this.state.getNodeType().equals(Role.LEADER)) {
-                System.out.println(persistentStore);
-                Map<String, Pair<ServerClientConnectionGrpc.ServerClientConnectionBlockingStub, ManagedChannel>> clientChannels = new HashMap<>();
-                for (String reqId : persistentStore.keySet()) {
+            System.out.println(persistentStore);
+            Map<String, Pair<ServerClientConnectionGrpc.ServerClientConnectionBlockingStub, ManagedChannel>> clientChannels = new HashMap<>();
+            for (String reqId : persistentStore.keySet()) {
 //                    try {
-                    if (persistentStore.get(reqId) != null) {
+                if (persistentStore.get(reqId) != null) {
 
-                        String[] split = persistentStore.get(reqId).getKey().split(":");
-                        String clientId = persistentStore.get(reqId).getKey();
+                    String[] split = persistentStore.get(reqId).getKey().split(":");
+                    String clientId = persistentStore.get(reqId).getKey();
 
-                        if (!clientChannels.containsKey(clientId)) {
-                            ManagedChannel clientChannel = ManagedChannelBuilder.forAddress(split[0], Integer.parseInt(split[1])).usePlaintext().build();
-                            clientChannels.put(clientId, new Pair<>(ServerClientConnectionGrpc.newBlockingStub(clientChannel), clientChannel));
-                        }
-                        clientChannels.get(clientId).getKey().talkBack(Client.StatusUpdate.newBuilder().setReqId(reqId).setReturnVal(persistentStore.get(reqId).getValue()).build());
-                        persistentStore.remove(reqId);
-
+                    if (!clientChannels.containsKey(clientId)) {
+                        ManagedChannel clientChannel = ManagedChannelBuilder.forAddress(split[0], Integer.parseInt(split[1])).usePlaintext().build();
+                        clientChannels.put(clientId, new Pair<>(ServerClientConnectionGrpc.newBlockingStub(clientChannel), clientChannel));
                     }
+                    clientChannels.get(clientId).getKey().talkBack(Client.StatusUpdate.newBuilder().setReqId(reqId).setReturnVal(persistentStore.get(reqId).getValue()).build());
+                    persistentStore.remove(reqId);
+
+                }
 //                }
             }
 
@@ -166,70 +164,64 @@ public class LoadBalancerServer {
             logger.debug("Not a leader so won't be doing");
         }
     }
-    */
 
-    //TODO  : Lot of refactoring , locking ? I forgot the code
-    private void initiateCommitScheduleRPC() {
+    private void initiateCommitScheduleRPC(){
         lock.lock();
         try {
             if (this.state.getNodeType() == Role.LEADER) {
-                if (this.state.getCommitIndex() <= this.state.getLastApplied() && this.state.getCommitIndex() <= this.state.getEntries().size() && this.state.getLastApplied() <= this.state.getEntries().size()) {
+                if(this.state.getCommitIndex() <= this.state.getLastApplied() &&  this.state.getCommitIndex() <= this.state.getEntries().size() && this.state.getLastApplied() <=  this.state.getEntries().size()){
                     long index = this.state.getCommitIndex();
-                    logger.debug("[CommitSchedule] inside leader commit starting from " + (index + 1) + " to " + this.state.getLastApplied());
-                    for (long i = index + 1; i <= this.state.getLastApplied(); i++) {
+                    logger.debug("[CommitSchedule] inside leader commit starting from " + (index + 1) + " to "+ this.state.getLastApplied());
+                    for(long i = index+1; i<=this.state.getLastApplied(); i++){
                         int ret = db.commit(this.state.getEntries().get((int) i));
-                        if (ret == -1) {
+                        if(ret == -1){
                             logger.debug("[CommitSchedule] Failed but no issues");
-                        } else {
-                            logger.info("[CommitSchedule] Commited successfully :: " + i + " at " + System.currentTimeMillis());
                         }
-                        this.state.setCommitIndex(this.state.getCommitIndex() + 1);
-
-                    }
-                }
-            } else {
-                if (this.state.getCommitIndex() > this.state.getLastLeaderCommitIndex()) {
-                    logger.debug("[CommitSchedule] Your commit index :: " + this.state.getCommitIndex() + " is more than leader commit index :: " + this.state.getLastLeaderCommitIndex());
-                    return;
-                }
-                if (this.state.getCommitIndex() <= this.state.getLastLeaderCommitIndex() && this.state.getCommitIndex() < this.state.getEntries().size() && this.state.getLastLeaderCommitIndex() < this.state.getEntries().size()) {
-                    long index = this.state.getCommitIndex();
-                    for (long i = index + 1; i <= this.state.getLastLeaderCommitIndex(); i++) {
-                        int ret = db.commit(this.state.getEntries().get((int) i));
-                        if (ret == -1) {
-                            logger.debug("[CommitSchedule] Failed but no issues");
-                        } else {
-                            logger.info("[CommitSchedule] Commited successfully :: " + i + " at " + System.currentTimeMillis());
+                        else{
+                            logger.info("[CommitSchedule] Commited successfully :: "+i + " at "+System.currentTimeMillis());
                         }
 //                        Pair<String, Boolean> stringBooleanPair = this.persistentStore.get(this.state.getEntries().get((int) i).getRequestId());
 //                        this.persistentStore.put(this.state.getEntries().get((int) i).getRequestId(), new Pair<>(stringBooleanPair.getKey(), ret != -1));
-
+                        this.state.setCommitIndex(this.state.getCommitIndex() + 1);
+                    }
+                }
+            }
+            else{
+                if(this.state.getCommitIndex() > this.state.getLastLeaderCommitIndex()){
+                    logger.debug("[CommitSchedule] Your commit index :: " + this.state.getCommitIndex() + " is more than leader commit index :: "+this.state.getLastLeaderCommitIndex());
+                    return;
+                }
+                if(this.state.getCommitIndex() <= this.state.getLastLeaderCommitIndex()  && this.state.getCommitIndex() < this.state.getEntries().size() && this.state.getLastLeaderCommitIndex() < this.state.getEntries().size()){
+                    long index = this.state.getCommitIndex();
+                    for(long i=index+1;i<=this.state.getLastLeaderCommitIndex();i++){
+                        int ret = db.commit(this.state.getEntries().get((int) i));
+                        if(ret == -1){
+                            logger.debug("[CommitSchedule] Failed but no issues");
+                        }
+                        else{
+                            logger.info("[CommitSchedule] Commited successfully :: "+i+" at "+System.currentTimeMillis());
+                        }
+//                        Pair<String, Boolean> stringBooleanPair = this.persistentStore.get(this.state.getEntries().get((int) i).getRequestId());
+//                        this.persistentStore.put(this.state.getEntries().get((int) i).getRequestId(), new Pair<>(stringBooleanPair.getKey(), ret != -1));
                         this.state.setCommitIndex(this.state.getCommitIndex() + 1);
                     }
                 }
             }
         } catch (Exception ex) {
-            logger.error("[CommitSchedule] Oops got a intresting exception:: " + ex);
-        } finally {
+            logger.error("[CommitSchedule] Oops got a intresting exception:: "+ex);
+        }
+        finally {
             lock.unlock();
         }
     }
-
-
-    private void initiateLiveLinessProbesRPC() {
-        subClusterList.stream().forEach(sc -> {
-            liveLinessExecutor.submit(() -> loadBalancerLiveLinessService.checkLiveliness(sc));
-        });
-    }
-
     public void initiateElectionRPC() {
         Raft.RequestVote.Builder requestBuilder = Raft.RequestVote.newBuilder();
-        logger.debug("[initiateElectionRPC] Starting election at :: " + System.currentTimeMillis());
+        logger.debug("[initiateElectionRPC] Starting election at :: "+ System.currentTimeMillis());
         lock.lock();
         try {
-            logger.debug("[initiateElectionRPC] Current time :: " + System.currentTimeMillis() + " HeartBeat timeout time :: " + (this.state.getHeartbeatTrackerTime() + 5 * 80 * MAX_REQUEST_RETRY));
-            if (this.state.getHeartbeatTrackerTime() != 0 && System.currentTimeMillis() > (this.state.getHeartbeatTrackerTime() + 5 * 80 * MAX_REQUEST_RETRY)) {
-                logger.info("[initiateElectionRPC] Stepping down as follower at :: " + System.currentTimeMillis());
+            logger.debug("[initiateElectionRPC] Current time :: " + System.currentTimeMillis() + " HeartBeat timeout time :: " +  (this.state.getHeartbeatTrackerTime() + 5 * 80 * MAX_REQUEST_RETRY));
+            if(this.state.getHeartbeatTrackerTime() != 0 && System.currentTimeMillis() > (this.state.getHeartbeatTrackerTime() +  5 * 80 * MAX_REQUEST_RETRY) ) {
+                logger.info("[initiateElectionRPC] Stepping down as follower at :: "+ System.currentTimeMillis());
                 this.state.setVotedFor(null);
                 this.state.setNodeType(Role.FOLLOWER);
             }
@@ -237,9 +229,9 @@ public class LoadBalancerServer {
 
                 logger.debug("[initiateElectionRPC]  Already a leader! So not participating in Election!");
                 //@CHECK :: UNCOMMENT THIS TO TEST APPEND ENTRIES SIMULATING CLIENT
-//                for(int i = 0 ;i < 1; i++){
-//                    this.state.getSnapshot().add(Raft.LogEntry.newBuilder().setCommand(Raft.Command.newBuilder().setValue(random.nextInt(10)).setKey(random.nextInt(10)).build()).setTerm(this.state.getCurrentTerm()).setIndex("Bolimaga").build());
-//                }
+                for(int i = 0 ;i < 1; i++){
+                    this.state.getSnapshot().add(Raft.LogEntry.newBuilder().setCommand(Raft.Command.newBuilder().setValue(Integer.toString(random.nextInt(10))).setKey(Integer.toString(random.nextInt(10))).build()).setTerm(this.state.getCurrentTerm()).setIndex("Bolimaga").build());
+                }
                 return;
             }
             if (!Objects.isNull(this.state.getVotedFor()) && this.state.getNodeType().equals(Role.FOLLOWER)) {
@@ -253,13 +245,15 @@ public class LoadBalancerServer {
             this.state.setCurrentTerm(this.state.getCurrentTerm() + 1);
             requestBuilder.setCandidateId(this.state.getNodeId());
             requestBuilder.setTerm(this.state.getCurrentTerm());
-            long lastLogTerm = this.state.getLastApplied() == -1 ? -1 : this.state.getEntries().get((int) this.state.getLastApplied()).getTerm();
+            long lastLogTerm = this.state.getLastApplied() == -1 ? -1 : this.state.getEntries().get((int)this.state.getLastApplied()).getTerm();
             requestBuilder.setLeaderLastAppliedTerm(lastLogTerm);
             requestBuilder.setLeaderLastAppliedIndex(this.state.getLastApplied());
             this.state.setTotalVotes(1);
-        } catch (Exception e) {
+        }
+        catch(Exception e){
             logger.error("Initiate RPC before request error " + e);
-        } finally {
+        }
+        finally {
             lock.unlock();
         }
         Raft.RequestVote request = requestBuilder.build();
@@ -290,12 +284,12 @@ public class LoadBalancerServer {
                         logger.info("[RequestVoteWrapper] Got the leadership ::  NodeType : " + this.state.getNodeType() + " Votes : " + this.state.getTotalVotes() + " current term: " + this.state.getCurrentTerm());
                         this.state.setHeartbeatTrackerTime(System.currentTimeMillis());
                         this.state.setNodeType(Role.LEADER);
-                        logger.info("[RequestVoteWrapper] Got leadership at :: " + System.currentTimeMillis());
+                        logger.info("[RequestVoteWrapper] Got leadership at :: "+System.currentTimeMillis());
                     }
-                    logger.debug("[RequestVoteWrapper] Before state of " + server.getEndpoint() + " Match index :: " + this.state.getMatchIndex().get(server.getServerId()) + " Next Index :: " + this.state.getNextIndex().get(server.getServerId()));
+                    logger.debug("[RequestVoteWrapper] Before state of "+server.getEndpoint()+" Match index :: "+ this.state.getMatchIndex().get(server.getServerId()) + " Next Index :: "+ this.state.getNextIndex().get(server.getServerId()));
                     this.state.getNextIndex().set(server.getServerId(), (int) responseVote.getCandidateLastLogIndex() + 1);
                     this.state.getMatchIndex().set(server.getServerId(), (int) responseVote.getCandidateLastLogIndex());
-                    logger.debug("[RequestVoteWrapper] After state of " + server.getEndpoint() + " Match index :: " + this.state.getMatchIndex().get(server.getServerId()) + " Next Index :: " + this.state.getNextIndex().get(server.getServerId()));
+                    logger.debug("[RequestVoteWrapper] After state of "+server.getEndpoint()+" Match index :: "+ this.state.getMatchIndex().get(server.getServerId()) + " Next Index :: "+ this.state.getNextIndex().get(server.getServerId()));
                     logger.debug("[RequestVoteWrapper] Number of Votes : " + this.state.getTotalVotes());
                 } finally {
                     lock.unlock();
@@ -303,9 +297,9 @@ public class LoadBalancerServer {
             } else {
                 logger.debug("[RequestVoteWrapper] Not granted by :: " + endpoint.getPort() + " Response :: " + responseVote.getTerm() + " Current :: " + this.state.getCurrentTerm());
             }
-        } catch (Exception ex) {
-            logger.debug("[RequestVoteWrapper] Server might not be up!! " + ex);
-        } finally {
+        }catch (Exception ex) {
+            logger.debug("[RequestVoteWrapper] Server might not be up!! "+ ex);
+        } finally{
             channel.shutdown();
         }
 
@@ -326,30 +320,30 @@ public class LoadBalancerServer {
                 termIncreaseInterval = 0;
             }
             lock.unlock();
-            logger.debug(this.state.getLastApplied() + " getLastApplied :  " + this.state.getLastLogIndex() + " : getLastLogIndex");
+            logger.debug(this.state.getLastApplied() + " getLastApplied :  " +  this.state.getLastLogIndex() + " : getLastLogIndex");
 
             // if getLastLogIndex is 0 then its a initial case where currnet node is starting fresh
             if (this.state.getLastLogIndex() > 0 && this.state.getLastApplied() < this.state.getLastLogIndex()) {
                 // check for majority now!
                 int i = 0, majority = 1;
-                for (; i < cluster.size(); ++i) {
+                for(; i < cluster.size();++i) {
                     int serverInd = cluster.get(i).getServerId();
-                    if (serverInd != Integer.parseInt(this.state.getNodeId())
+                    if(serverInd != Integer.parseInt(this.state.getNodeId())
                             && this.state.getMatchIndex().get(serverInd) == this.state.getLastLogIndex()) {
                         majority += 1;
                     }
-                    logger.debug("Server index :: " + serverInd + " has match index :: " + this.state.getMatchIndex());
+                    logger.debug("Server index :: "+ serverInd + " has match index :: "+this.state.getMatchIndex());
                 }
-                if (majority <= cluster.size() / 2) {
+                if (majority <= cluster.size()/2) {
                     logger.debug("[initiateHeartbeatRPC] Retrying the log append retires!! : " + logAppendRetries);
                     logAppendRetries++;
                 } else {
                     logger.debug("[initiateHeartbeatRPC] Resetting everything : " + logAppendRetries);
-                    logger.info("Got majority for entires from " + this.state.getLastApplied() + " to  " + (this.state.getLastLogIndex() + 1) + "at " + System.currentTimeMillis());
+                    logger.info("Got majority for entires from " + this.state.getLastApplied() + " to  "+(this.state.getLastLogIndex()+1) + "at "+System.currentTimeMillis());
                     rejectionRetries = 0;
                     logAppendRetries = 0;
                 }
-                if (logAppendRetries == 0) {
+                if(logAppendRetries == 0){
                     logger.debug("[initiateHeartbeatRPC] Successfully got the logAppendEntries");
                     this.state.setLastApplied(this.state.getLastLogIndex());
                     // apply snapshot
@@ -359,8 +353,8 @@ public class LoadBalancerServer {
                     logAppendRetries = 0;
                     this.state.getSnapshot().clear();
                 }
-                if (logAppendRetries == MAX_REQUEST_RETRY) {
-                    if (rejectionRetries == MAX_REQUEST_RETRY) {
+                if(logAppendRetries == MAX_REQUEST_RETRY) {
+                    if(rejectionRetries == MAX_REQUEST_RETRY) {
                         logger.info("[initiateHeartbeatRPC] Max rejections seen from the leader! Stepping down!");
                         logAppendRetries = 0;
                         rejectionRetries = 0;
@@ -370,7 +364,7 @@ public class LoadBalancerServer {
                     rejectionRetries++;
                     logger.info("[initiateHeartbeatRPC] Log append retries max limit reached!!");
                     logger.debug("Before :: LogEntry Size->" + this.state.getEntries().size() + " Snapshot Size->" + this.state.getSnapshot().size());
-                    if (this.state.getLastApplied() != -1) {
+                    if(this.state.getLastApplied() != -1) {
                         this.state.getEntries().subList((int) this.state.getLastApplied(), (int) this.state.getLastLogIndex() + 1).clear();
                         this.state.getEntries().addAll(this.state.getSnapshot());
                         this.state.setLastLogIndex(this.state.getEntries().size() - 1);
@@ -386,13 +380,13 @@ public class LoadBalancerServer {
                 this.state.setLastLogIndex(this.state.getEntries().size() - 1);
                 this.state.getSnapshot().clear();
             }
-            logger.debug("[initiateHeartbeatRPC] Snapshot :: " + this.state.getSnapshot());
-            logger.debug("[initiateHeartbeatRPC] Entries :: " + this.state.getEntries());
-            logger.debug("[initiateHeartbeatRPC] Current Node is a leader! Reseting the heartbeat timeout to :: " + System.currentTimeMillis());
+            logger.debug("[initiateHeartbeatRPC] Snapshot :: "+ this.state.getSnapshot());
+            logger.debug("[initiateHeartbeatRPC] Entries :: "+ this.state.getEntries());
+            logger.debug("[initiateHeartbeatRPC] Current Node is a leader! Reseting the heartbeat timeout to :: "+System.currentTimeMillis());
             this.state.setHeartbeatTrackerTime(System.currentTimeMillis());
 
             this.state.getEntries().stream().forEach(le ->
-                    logger.debug(le.getTerm() + " :: " + le.getCommand().getKey() + " -> " + le.getCommand().getValue()));
+                    logger.debug(le.getTerm() + " :: " + le.getCommand().getKey() +" -> "+le.getCommand().getValue()));
             // @CHECK : UNCOMMENT Below lines to simulate delay in leader during heartbeat
 //            if(this.state.getEntries().size() == 5) {
 //                logger.debug("[initiateHeartbeatRPC] Simulating leader network partition");
@@ -404,13 +398,128 @@ public class LoadBalancerServer {
                 }
             });
         } catch (Exception e) {
-            logger.error("[initiateHeartbeatRPC] excp :: " + e);
+            logger.error("[initiateHeartbeatRPC] excp :: "+ e);
         }
 
     }
 
+    public void initiateLBProcessor() {
+        logger.debug("[initiateLBProcessor] Log Entries has " + this.state.getLoadBalancerEntries().size() + " entries: " + logAppendRetries);
+        if (!this.state.getNodeType().equals(Role.LEADER)) {
+            logger.debug("[initiateLBProcessor] Not a leader! So not participating in Load Balancer Processing!");
+            return;
+        }
+        logger.debug("[initiateLBProcessor] getClusterDetails :: "+this.state.getClusterDetails());
+        logger.debug("[initiateLBProcessor] getLoadBalancerEntries :: "+this.state.getLoadBalancerEntries());
+        logger.debug("[initiateLBProcessor] getLoadBalancerSnapshot :: "+this.state.getLoadBalancerSnapshot());
+        logger.debug("[initiateLBProcessor] getLastLoadBalancerCommitIndex :: "+this.state.getLastLoadBalancerCommitIndex());
+        logger.debug("[initiateLBProcessor] getLastLoadBalancerProcessed :: "+this.state.getLastLoadBalancerProcessed());
+        logger.debug("[initiateLBProcessor] getLastLoadBalancerLogIndex :: "+this.state.getLastLoadBalancerLogIndex());
+        if (this.state.getClusterDetails().size() != this.state.getLoadBalancerEntries().size()
+                || this.state.getClusterDetails().size() != this.state.getLoadBalancerSnapshot().size()
+                || this.state.getClusterDetails().size() != this.state.getLastLoadBalancerCommitIndex().size()
+                || this.state.getClusterDetails().size() != this.state.getLastLoadBalancerProcessed().size()
+                || this.state.getClusterDetails().size() != this.state.getLastLoadBalancerLogIndex().size()) {
+            logger.info("Entries and cluster sizes dont match! Possible scnenario of scaling being happening!?");
+            return;
+        }
+        for(int i = 0; i < this.state.getClusterDetails().size(); ++i){
+            initiateLBProcessorWrapper(i);
+        }
+    }
+    private void initiateLBProcessorWrapper(int clusterIndex) {
+
+        try {
+            logger.debug("[initiateLBProcessorWrapper] Last Processed :" + this.state.getLastLoadBalancerProcessed().get(clusterIndex) +
+                    " || GetLoadBalancerLastIndex : "+ this.state.getLastLoadBalancerLogIndex().get(clusterIndex));
+
+            // if getLastLogIndex is 0 then its a initial case where currnet node is starting fresh
+            // && validating if all the elements within process list (elements between lastProcess - lastLBLogIndex
+            if (this.state.getLastLoadBalancerLogIndex().get(clusterIndex) > 0
+                    && this.state.getLastLoadBalancerProcessed().get(clusterIndex) < this.state.getLastLoadBalancerLogIndex().get(clusterIndex)
+                    && Collections.frequency(this.state.getLoadBalancerProcessStatus().get(clusterIndex), true)
+                    != this.state.getLoadBalancerProcessStatus().get(clusterIndex).size()) {
+                lbRejectionRetries++;
+            } else {
+                this.state.getLastLoadBalancerProcessed().set(clusterIndex, this.state.getLastLoadBalancerLogIndex().get(clusterIndex));
+                this.state.getLoadBalancerEntries().get(clusterIndex).addAll(this.state.getLoadBalancerSnapshot().get(clusterIndex));
+                this.state.getLoadBalancerSnapshot().get(clusterIndex).clear();
+                this.state.getLastLoadBalancerLogIndex().set(clusterIndex, (long) (this.state.getLoadBalancerEntries().get(clusterIndex).size() -1));
+                lbRejectionRetries = 0;
+            }
+            logger.debug("[initiateLBProcessorWrapper] Snapshot for cluster "+clusterIndex+" :: "+ this.state.getLoadBalancerSnapshot().get(clusterIndex));
+            logger.debug("[initiateLBProcessorWrapper] Entries for cluster "+clusterIndex+":: "+ this.state.getLoadBalancerEntries().get(clusterIndex));
+
+            this.state.getLoadBalancerEntries().get(clusterIndex).stream().forEach(le ->
+                    logger.debug(le.getTerm() + " :: " + le.getCommand().getKey() +" -> "+le.getCommand().getValue()));
+
+            // @TODO :: Need to send new fresh to-process entries
+            this.state.getClusterDetails().get(clusterIndex).stream().forEach(serv -> {
+                // @TODO :: new executor here!!
+                // @TODO :: send only for cluster leader
+                this.heartBeatExecutor.submit(() -> sendLoadBalancerEntries(serv, clusterIndex));
+            });
+        } catch (Exception e) {
+            logger.error("[initiateLBProcessorWrapper] excp :: "+ e);
+        }
+    }
+
+    private void sendLoadBalancerEntries(Raft.ServerConnect server, int clusterIndex) {
+
+        logger.debug("[sendLoadBalancerEntries] : Sending request to " + server.getServerId() + " at "+System.currentTimeMillis());
+        List<Raft.LogEntry> entryToSend = new ArrayList<>();
+        Loadbalancer.LoadBalancerRequest.Builder requestBuilder = Loadbalancer.LoadBalancerRequest.newBuilder();
+        try {
+            if (this.state.getNodeType() != Role.LEADER) {
+                logger.debug("[sendLoadBalancerEntries] : Current node is not leader so cant send load balancer entries");
+                return;
+            }
+            if(this.state.getLastLoadBalancerProcessed().get(clusterIndex) == -1) {
+                logger.info("[sendLoadBalancerEntries] getLastLoadBalancerProcessed for cluster "+clusterIndex+" is -1");
+                return;
+            }
+            for (long i = this.state.getLastLoadBalancerProcessed().get(clusterIndex);
+                 i <= this.state.getLastLoadBalancerLogIndex().get(clusterIndex); ++i) {
+                if(this.state.getLoadBalancerEntries().get(clusterIndex).size() < i) {
+                    logger.info("[sendLoadBalancerEntries] CLuster Entries for "+clusterIndex+" is small than index :: " +i);
+                    continue;
+                }
+                entryToSend.add(this.state.getLoadBalancerEntries().get(clusterIndex).get((int) i));
+            }
+            requestBuilder.addAllEntries(entryToSend);
+            logger.debug("[sendAppendEntries] Final Request :: "+ requestBuilder.toString());
+        } catch (Exception e) {
+            logger.debug("[sendLoadBalancerEntries] after response ex : " + e);
+        }
+
+        logger.debug("[sendLoadBalancerEntries] : before call : " + server.getServerId());
+        Raft.Endpoint endpoint = server.getEndpoint();
+        ManagedChannel channel = ManagedChannelBuilder.forAddress(endpoint.getHost(), endpoint.getPort()).usePlaintext().build();
+
+        lock.lock();
+        try {
+            LoadBalancerRequestServiceGrpc.LoadBalancerRequestServiceBlockingStub loadBalancerRequestServiceStub = LoadBalancerRequestServiceGrpc.newBlockingStub(channel);
+            Loadbalancer.LoadBalancerResponse response = loadBalancerRequestServiceStub.sendEntries(requestBuilder.build());
+            int ind = 0;
+            for (long i = this.state.getLastLoadBalancerProcessed().get(clusterIndex);
+                 i <= this.state.getLastLoadBalancerLogIndex().get(clusterIndex); ++i) {
+                logger.debug("[sendLoadBalancerEntries] Response :: "+response.getSuccess(ind));
+                this.state.getLoadBalancerProcessStatus().get(clusterIndex).set((int) i, response.getSuccess(ind));
+            }
+            logger.debug("[sendLoadBalancerEntries] Final status for cluster :: "+this.state.getLoadBalancerProcessStatus().get(clusterIndex));
+        } catch (Exception e) {
+            logger.debug("[sendLoadBalancerEntries] after response ex : " + e);
+            for (long i = this.state.getLastLoadBalancerProcessed().get(clusterIndex);
+                 i <= this.state.getLastLoadBalancerLogIndex().get(clusterIndex); ++i) {
+                this.state.getLoadBalancerProcessStatus().get(clusterIndex).set((int) i, false);
+            }
+        } finally {
+            lock.unlock();
+            channel.shutdown();
+        }
+    }
     private void sendAppendEntries(Raft.ServerConnect server) {
-        logger.debug("[sendAppendEntries] : Sending request to " + server.getServerId() + " at " + System.currentTimeMillis());
+        logger.debug("[sendAppendEntries] : Sending request to " + server.getServerId() + " at "+System.currentTimeMillis());
         List<Raft.LogEntry> entryToSend = new ArrayList<>();
 
         Raft.AppendEntriesRequest.Builder requestBuilder = Raft.AppendEntriesRequest.newBuilder();
@@ -441,7 +550,7 @@ public class LoadBalancerServer {
 //            logger.debug("[sendAppendEntries] peer match :: " + peerMatchIndex + " : "+this.state.getLastLogIndex());
             //ConvertToInt
             for (long i = peerMatchIndex + 1; i <= this.state.getLastLogIndex(); i++) {
-                if (entries.size() <= i) {
+                if(entries.size() <= i) {
                     continue;
                 }
                 entryToSend.add(entries.get((int) i));
@@ -449,10 +558,10 @@ public class LoadBalancerServer {
             requestBuilder.addAllEntries(entryToSend);
             requestBuilder.setLastAppliedIndex(this.state.getLastApplied());
 
-            logger.debug("[sendAppendEntries] Final Request :: " + requestBuilder.toString());
+            logger.debug("[sendAppendEntries] Final Request :: "+ requestBuilder.toString());
         } catch (Exception e) {
             e.printStackTrace();
-            logger.error("[sendAppendEntries] ex : " + e);
+            logger.error("[sendAppendEntries] ex : "+ e);
         }
 
         logger.debug("[sendAppendEntries] : before call : " + server.getServerId());
@@ -464,7 +573,7 @@ public class LoadBalancerServer {
             RaftServiceGrpc.RaftServiceBlockingStub raftServiceBlockingStub = RaftServiceGrpc.newBlockingStub(channel);
             Raft.AppendEntriesResponse response = raftServiceBlockingStub.appendEntries(requestBuilder.build());
             boolean success = response.getSuccess();
-            if (this.state.getCurrentTerm() < response.getTerm()) {
+            if(this.state.getCurrentTerm() < response.getTerm()){
                 this.state.setNodeType(Role.FOLLOWER);
                 logger.debug("Got rejected, as my term was lower as a leader. This shouldn't be happening");
             }
@@ -500,17 +609,48 @@ public class LoadBalancerServer {
             channel.shutdown();
         }
     }
-
-
     /**
      * PreCalls - accessed by client -> job is to read the DB and add to Queue
-     * TODO Update requestParam to String
+     * TODO Update requestParam to String and also handle read
      *
      * @param request
      * @return
      */
     public long preCall(Client.Request request) {
         String key = String.valueOf(request.getKey());
+        if(db.getCacheEntry().containsKey(key) && request.getCommandType().equals("READ")){
+            int clusterId = db.getCacheEntry().get(key).getValue();
+            if (subClusterMap.containsKey(clusterId)) {
+
+//                Loadbalancer.DataRequestObject.Builder builder = Loadbalancer.DataRequestObject.newBuilder();
+//                logger.debug("[LoadBalancerServer], found the key, Mapping to an LogEntry");
+//                builder.setCommand("Read").setKey(key);
+                //AddToTheQueue
+                return 1;
+
+            } else {
+                return -1; // Error code for cluster Not available;
+            }
+        }
+
+        if(db.getCacheEntry().containsKey(key) && request.getCommandType().equals("WRITE")){
+            Pair<Integer, Integer> integerIntegerPair = db.getCacheEntry().get(key);
+            //TODO
+            Pair<Integer,Integer> pair = new Pair<>(integerIntegerPair.getKey()+1, integerIntegerPair.getValue());
+
+            int clusterId = db.getCacheEntry().get(key).getValue();
+            if (subClusterMap.containsKey(clusterId)) {
+
+//                Loadbalancer.DataRequestObject.Builder builder = Loadbalancer.DataRequestObject.newBuilder();
+//                logger.debug("[LoadBalancerServer], found the key, Mapping to an LogEntry");
+//                builder.setCommand("Read").setKey(key);
+                //AddToTheQueue
+                return 1;
+
+            } else {
+                return -1; // Error code for cluster Not available;
+            }
+        }
         ReadLBObject readLBObject = db.read(String.valueOf(key));
         int retVal = readLBObject.getReturnVal();
 
@@ -524,9 +664,9 @@ public class LoadBalancerServer {
 
             if (subClusterMap.containsKey(clusterId)) {
 
-                Loadbalancer.DataRequestObject.Builder builder = Loadbalancer.DataRequestObject.newBuilder();
-                logger.debug("[LoadBalancerServer], found the key, Mapping to an LogEntry");
-                builder.setCommand("Read").setKey(key);
+//                Loadbalancer.DataRequestObject.Builder builder = Loadbalancer.DataRequestObject.newBuilder();
+//                logger.debug("[LoadBalancerServer], found the key, Mapping to an LogEntry");
+//                builder.setCommand("Read").setKey(key);
                 //AddToTheQueue
                 return 1;
 
@@ -535,6 +675,8 @@ public class LoadBalancerServer {
             }
         } else if (request.getCommandType().equals("WRITE")) {
             int versionNumber = readLBObject.getVersionNumber();
+            //TODO
+            db.getCacheEntry().put(key, new Pair<>(versionNumber, 1));
             //AddToTheQueue
             return 1;
         } else if (request.getCommandType().equals("DELETE")) {
@@ -573,6 +715,12 @@ public class LoadBalancerServer {
 
     private void initiateCleanUpVersions(){
         db.cleanUp();
+    }
+
+    private void initiateLiveLinessProbesRPC() {
+        subClusterList.stream().forEach(sc -> {
+            liveLinessExecutor.submit(() -> loadBalancerLiveLinessService.checkLiveliness(sc));
+        });
     }
 
 

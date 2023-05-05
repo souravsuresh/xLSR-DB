@@ -1,24 +1,21 @@
 syntax = "proto3";
 
 package com.wisc.raft.proto;
+import "raft.proto";
 
-message LBLogEntry {
-  optional sint64 term = 1;
-  optional string index = 2;
-  optional string command = 3;
-  optional string requestId = 4;
+service LoadBalancerRequestService{
+  rpc sendEntries(LoadBalancerRequest) returns (LoadBalancerResponse);
 };
 
-
-message DataRequestObject {
-  optional string command = 1;
-  optional string key = 2;
-};
-
-service LBSubClusterService{
-  rpc Send(DataRequestObject) returns (DataResponseObject);
+message LoadBalancerRequest{
+  repeated LogEntry entries = 6;
+  optional string dataClusterId = 3;
 }
 
-message DataResponseObject {
-  optional sint32 retCode = 1;
-};
+message LoadBalancerResponse {
+  repeated bool success = 1;
+}
+
+message DataRequestObject{
+  string command=1;
+}

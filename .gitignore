@@ -1,0 +1,4 @@
+target*
+.idea*
+leveldb_*
+*.class

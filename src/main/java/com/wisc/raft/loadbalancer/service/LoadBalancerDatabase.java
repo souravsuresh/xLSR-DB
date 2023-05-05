@@ -25,6 +25,15 @@ public class LoadBalancerDatabase {
     private String path;
     private DB db;
 
+    public ConcurrentHashMap<String, Pair<Integer, Integer>> getCacheEntry() {
+        return cacheEntry;
+    }
+
+    public void setCacheEntry(ConcurrentHashMap<String, Pair<Integer,Integer>> cacheEntry) {
+        this.cacheEntry = cacheEntry;
+    }
+
+    ConcurrentHashMap<String, Pair<Integer, Integer>> cacheEntry;
     ConcurrentHashMap<byte[], Integer> concurrentCleanUpList;
     int keep = 3;
 
@@ -32,6 +41,7 @@ public class LoadBalancerDatabase {
         Options options = new Options();
         options.createIfMissing(true);
         concurrentCleanUpList = new ConcurrentHashMap<>();
+        cacheEntry = new ConcurrentHashMap<>();
         this.path = path;
         try {
             db = factory.open(new File(this.path), options);
@@ -56,13 +66,15 @@ public class LoadBalancerDatabase {
     }
 
     public int commit(Raft.LogEntry logEntry) {
-        byte[] keyBytes = ByteBuffer.allocate(Long.BYTES).putLong(logEntry.getCommand().getKey()).array();
+        byte[] keyBytes = logEntry.getCommand().getKey().getBytes();
         if (Objects.isNull(keyBytes)) {
             logger.error("[LbDatabase] Key cannot not be serialized");
             return -1;
         }
         try {
             byte[] object = serialize(logEntry);
+            //
+            cacheEntry.remove("key");
             if (Objects.isNull(keyBytes)) {
                 logger.error("[LbDatabase] LogEntry cannot not be serialized");
                 return 1;
@@ -88,7 +100,7 @@ public class LoadBalancerDatabase {
         }
         byte[] bytes = db.get(keyBytes);
         if(bytes == null){
-            logger.error("[LbDatabase] No key exists " );
+            logger.error("[LbDatabase] No value exists " );
             readLBObject.setReturnVal(-2);
             readLBObject.setVersionNumber(1);
             return readLBObject;

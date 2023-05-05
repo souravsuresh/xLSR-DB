@@ -472,7 +472,7 @@ public class Server {
     }
 
     public long getValue(long key) {
-        long value = db.read(key);
+        long value = db.read(Long.parseLong(String.valueOf(key)));
         return value;
     }
 
@@ -482,7 +482,7 @@ public class Server {
             int numOfEntries = 1;
             //TODO should we pull the leader check code there ?
             //TODO add cmd type from params and make this into a loop
-            Raft.Command command = Raft.Command.newBuilder().setCommandType("Something").setKey(key).setValue(val).build();
+            Raft.Command command = Raft.Command.newBuilder().setCommandType("Something").setKey(String.valueOf(key)).setValue(String.valueOf(val)).build();
             String requestId = String.valueOf(UUID.randomUUID());
             Raft.LogEntry logEntry = Raft.LogEntry.newBuilder().setRequestId(requestId)
                                             .setCommand(command)
