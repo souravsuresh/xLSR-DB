@@ -1,12 +1,13 @@
 package com.wisc.raft.loadbalancer.state;
 
-import com.wisc.raft.proto.Raft;
 import com.wisc.raft.loadbalancer.constants.Role;
-import javafx.util.Pair;
+import com.wisc.raft.proto.Raft;
 import lombok.Getter;
 import lombok.Setter;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 
 @Getter
 @Setter
@@ -19,9 +20,12 @@ public class NodeState {
     private List<Raft.LogEntry> entries;
     private List<Raft.LogEntry> snapshot;
 
-    private List<Raft.LogEntry> loadBalancerEntries;
-    private List<Raft.LogEntry> loadBalancerSnapshot;
-    private List<Boolean> loadBalancerProcessStatus;      // status of that key within the process list
+    // load balancer related states
+    private HashMap<String, List<Raft.ServerConnect>> clusterDetails;       // cluster id to cluster details [localhost:8080, locahost:8081,...]
+    private List<List<Raft.LogEntry>> loadBalancerEntries;
+    private List<List<Raft.LogEntry>> loadBalancerSnapshot;
+    private List<List<Boolean>> loadBalancerProcessStatus;      // status of that key within the process list
+
 
     private Role nodeType;
 
@@ -31,9 +35,9 @@ public class NodeState {
     private long lastLogIndex;  // index of last log entry
 
     // load balancer related variables
-    private long lastProcessed;                     // indicates last completely processed index
-    private long lastLoadBalancerLogIndex;          // indicates last pointer to the list of log index
-    private long lastLoadBalancerCommitIndex;       // indicates last commit (movement from LB log -> Raft log) snapshot
+    private List<Long> lastLoadBalancerProcessed;                     // indicates last completely processed index
+    private List<Long> lastLoadBalancerLogIndex;          // indicates last pointer to the list of log index
+    private List<Long> lastLoadBalancerCommitIndex;       // indicates last commit (movement from LB log -> Raft log) snapshot
 
 
     //volatile state on leaders
@@ -79,11 +83,12 @@ public class NodeState {
         this.lastLogIndex = 0;
         this.lastLeaderCommitIndex = -1;
 
-        this.lastLoadBalancerLogIndex = 0;
-        this.lastProcessed = -1;
-        this.lastLoadBalancerCommitIndex = -1;
+        this.lastLoadBalancerLogIndex = new ArrayList<>();          // initialize new elements with 0
+        this.lastLoadBalancerProcessed = new ArrayList<>();                     // initialize new elements with -1
+        this.lastLoadBalancerCommitIndex = new ArrayList<>();       // initialize new elements with -1
         this.loadBalancerEntries = new ArrayList<>();
         this.loadBalancerSnapshot = new ArrayList<>();
         this.loadBalancerProcessStatus = new ArrayList<>();
+        this.clusterDetails = new HashMap<>();                      // @TODO might need to initlaize with initial set of clusters
     }
 }

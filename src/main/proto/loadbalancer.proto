@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package com.wisc.raft.proto;
+import "raft.proto";
+
+service LoadBalancerRequestService{
+  rpc sendEntries(LoadBalancerRequest) returns (LoadBalancerResponse);
+};
+
+message LoadBalancerRequest{
+  repeated LogEntry entries = 6;
+  optional string dataClusterId = 3;
+}
+
+message LoadBalancerResponse {
+  repeated bool success = 1;
+}

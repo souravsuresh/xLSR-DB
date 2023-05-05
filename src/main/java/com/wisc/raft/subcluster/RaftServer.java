@@ -45,7 +45,7 @@ public class RaftServer {
         ServerClientConnectionService clientConnectionService = new ServerClientConnectionService(raftServer);
         RaftConsensusService raftConsensusService = new RaftConsensusService(raftServer);
         logger.debug("[Sys Args] "+args.toString());
-        io.grpc.Server server = ServerBuilder.forPort(Integer.parseInt(args[1])).addService(raftConsensusService).addService(clientConnectionService).build();
+        io.grpc.Server server = ServerBuilder.forPort(Integer.parseInt(args[1])).addService(raftConsensusService).addService(clientConnectionService).addService(raftConsensusService).build();
         StorageState storageState = new StorageState("/Users/varun/Documents/DistFinalProject/", 1000000);
         UtilizationService utilizationService = new UtilizationService(raftServer, storageState);
 

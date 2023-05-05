@@ -1,6 +1,8 @@
 package com.wisc.raft.subcluster.service;
 
 import com.wisc.raft.proto.Raft;
+import lombok.Getter;
+import lombok.Setter;
 import org.iq80.leveldb.DB;
 import org.iq80.leveldb.Options;
 import org.slf4j.Logger;
@@ -9,8 +11,6 @@ import org.slf4j.LoggerFactory;
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.util.Objects;
-import lombok.Getter;
-import lombok.Setter;
 
 import static org.iq80.leveldb.impl.Iq80DBFactory.factory;
 
@@ -49,7 +49,8 @@ public class Database {
     }
 
     public int commit(Raft.LogEntry logEntry) {
-        byte[] keyBytes = ByteBuffer.allocate(Long.BYTES).putLong(logEntry.getCommand().getKey()).array();
+        // @TODO:: check this
+        byte[] keyBytes = ByteBuffer.allocate(Long.BYTES).putLong(Long.parseLong(logEntry.getCommand().getKey())).array();
         if (Objects.isNull(keyBytes)) {
             logger.error("[Database] Key cannot not be serialized");
             return -1;
@@ -77,7 +78,8 @@ public class Database {
         byte[] bytes = db.get(keyBytes);
         try {
             Raft.LogEntry logEntry = deserialize(bytes);
-            return logEntry.getCommand().getValue();
+            // @TODO :: check this
+            return Long.parseLong(logEntry.getCommand().getValue());
         } catch (Exception e) {
             logger.error("[Database] Exception while deserializing : " + e);
         }

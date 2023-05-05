@@ -1,7 +1,9 @@
 package com.wisc.raft.loadbalancer.server;
 
 import com.wisc.raft.loadbalancer.constants.Role;
+import com.wisc.raft.proto.LoadBalancerRequestServiceGrpc;
 import com.wisc.raft.proto.Raft;
+import com.wisc.raft.proto.Loadbalancer;
 import com.wisc.raft.proto.RaftServiceGrpc;
 import com.wisc.raft.loadbalancer.service.Database;
 import com.wisc.raft.loadbalancer.service.RaftConsensusService;
@@ -207,7 +209,7 @@ public class Server {
                 logger.debug("[initiateElectionRPC]  Already a leader! So not participating in Election!");
                 //@CHECK :: UNCOMMENT THIS TO TEST APPEND ENTRIES SIMULATING CLIENT
                 for(int i = 0 ;i < 1; i++){
-                    this.state.getSnapshot().add(Raft.LogEntry.newBuilder().setCommand(Raft.Command.newBuilder().setValue(random.nextInt(10)).setKey(random.nextInt(10)).build()).setTerm(this.state.getCurrentTerm()).setIndex("Bolimaga").build());
+                    this.state.getSnapshot().add(Raft.LogEntry.newBuilder().setCommand(Raft.Command.newBuilder().setValue(Integer.toString(random.nextInt(10))).setKey(Integer.toString(random.nextInt(10))).build()).setTerm(this.state.getCurrentTerm()).setIndex("Bolimaga").build());
                 }
                 return;
             }
@@ -381,63 +383,113 @@ public class Server {
     }
 
     public void initiateLBProcessor() {
+        logger.debug("[initiateLBProcessor] Log Entries has " + this.state.getLoadBalancerEntries().size() + " entries: " + logAppendRetries);
+        if (!this.state.getNodeType().equals(Role.LEADER)) {
+            logger.debug("[initiateLBProcessor] Not a leader! So not participating in Load Balancer Processing!");
+            return;
+        }
+        logger.debug("[initiateLBProcessor] getClusterDetails :: "+this.state.getClusterDetails());
+        logger.debug("[initiateLBProcessor] getLoadBalancerEntries :: "+this.state.getLoadBalancerEntries());
+        logger.debug("[initiateLBProcessor] getLoadBalancerSnapshot :: "+this.state.getLoadBalancerSnapshot());
+        logger.debug("[initiateLBProcessor] getLastLoadBalancerCommitIndex :: "+this.state.getLastLoadBalancerCommitIndex());
+        logger.debug("[initiateLBProcessor] getLastLoadBalancerProcessed :: "+this.state.getLastLoadBalancerProcessed());
+        logger.debug("[initiateLBProcessor] getLastLoadBalancerLogIndex :: "+this.state.getLastLoadBalancerLogIndex());
+        if (this.state.getClusterDetails().size() != this.state.getLoadBalancerEntries().size()
+                || this.state.getClusterDetails().size() != this.state.getLoadBalancerSnapshot().size()
+                || this.state.getClusterDetails().size() != this.state.getLastLoadBalancerCommitIndex().size()
+                || this.state.getClusterDetails().size() != this.state.getLastLoadBalancerProcessed().size()
+                || this.state.getClusterDetails().size() != this.state.getLastLoadBalancerLogIndex().size()) {
+            logger.info("Entries and cluster sizes dont match! Possible scnenario of scaling being happening!?");
+            return;
+        }
+        for(int i = 0; i < this.state.getClusterDetails().size(); ++i){
+            initiateLBProcessorWrapper(i);
+        }
+    }
+    private void initiateLBProcessorWrapper(int clusterIndex) {
+
         try {
-            logger.debug("[initiateLBProcessor] Log Entries has " + this.state.getLoadBalancerEntries().size() + " entries: " + logAppendRetries);
-            if (!this.state.getNodeType().equals(Role.LEADER)) {
-                logger.debug("[initiateLBProcessor] Not a leader! So not participating in Load Balancer Processing!");
-                return;
-            }
-            logger.debug("[initiateLBProcessor] Last Processed :" + this.state.getLastProcessed() + " || GetLoadBalancerLastIndex : "+ this.state.getLastLoadBalancerLogIndex());
+            logger.debug("[initiateLBProcessorWrapper] Last Processed :" + this.state.getLastLoadBalancerProcessed().get(clusterIndex) +
+                    " || GetLoadBalancerLastIndex : "+ this.state.getLastLoadBalancerLogIndex().get(clusterIndex));
 
             // if getLastLogIndex is 0 then its a initial case where currnet node is starting fresh
-            if (this.state.getLastLoadBalancerLogIndex() > 0 && this.state.getLastProcessed() < this.state.getLastLoadBalancerLogIndex()) {
-                // validating if all the elements within process list (elements between lastProcess - lastLBLogIndex
-                // @TODO:: Check if we need to wait for all or just reject?
-                if(Collections.frequency(this.state.getLoadBalancerProcessStatus(), true) == this.state.getLoadBalancerProcessStatus().size()) {
-                    this.state.setLastProcessed(this.state.getLastLoadBalancerLogIndex());
-                    this.state.getLoadBalancerEntries().addAll(this.state.getLoadBalancerSnapshot());
-                    this.state.getLoadBalancerSnapshot().clear();
-                    this.state.setLastLoadBalancerLogIndex(this.state.getLoadBalancerEntries().size() - 1);
-                    lbRejectionRetries = 0;
-                } else {
+            // && validating if all the elements within process list (elements between lastProcess - lastLBLogIndex
+            if (this.state.getLastLoadBalancerLogIndex().get(clusterIndex) > 0
+                    && this.state.getLastLoadBalancerProcessed().get(clusterIndex) < this.state.getLastLoadBalancerLogIndex().get(clusterIndex)
+                    && Collections.frequency(this.state.getLoadBalancerProcessStatus().get(clusterIndex), true)
+                    != this.state.getLoadBalancerProcessStatus().get(clusterIndex).size()) {
                     lbRejectionRetries++;
-                }
             } else {
-                this.state.setLastProcessed(this.state.getLastLoadBalancerLogIndex());
-                this.state.getLoadBalancerEntries().addAll(this.state.getLoadBalancerSnapshot());
-                this.state.getLoadBalancerSnapshot().clear();
-                this.state.setLastLoadBalancerLogIndex(this.state.getLoadBalancerEntries().size() - 1);
+                this.state.getLastLoadBalancerProcessed().set(clusterIndex, this.state.getLastLoadBalancerLogIndex().get(clusterIndex));
+                this.state.getLoadBalancerEntries().get(clusterIndex).addAll(this.state.getLoadBalancerSnapshot().get(clusterIndex));
+                this.state.getLoadBalancerSnapshot().get(clusterIndex).clear();
+                this.state.getLastLoadBalancerLogIndex().set(clusterIndex, (long) (this.state.getLoadBalancerEntries().get(clusterIndex).size() -1));
                 lbRejectionRetries = 0;
             }
-            logger.debug("[initiateLBProcessor] Snapshot :: "+ this.state.getLoadBalancerSnapshot());
-            logger.debug("[initiateLBProcessor] Entries :: "+ this.state.getLoadBalancerEntries());
+            logger.debug("[initiateLBProcessorWrapper] Snapshot for cluster "+clusterIndex+" :: "+ this.state.getLoadBalancerSnapshot().get(clusterIndex));
+            logger.debug("[initiateLBProcessorWrapper] Entries for cluster "+clusterIndex+":: "+ this.state.getLoadBalancerEntries().get(clusterIndex));
 
-            this.state.getLoadBalancerEntries().stream().forEach(le ->
+            this.state.getLoadBalancerEntries().get(clusterIndex).stream().forEach(le ->
                     logger.debug(le.getTerm() + " :: " + le.getCommand().getKey() +" -> "+le.getCommand().getValue()));
 
             // @TODO :: Need to send new fresh to-process entries
-            cluster.stream().forEach(serv -> {
-                if (serv.getServerId() != Integer.parseInt(this.state.getNodeId())) {
-                    this.heartBeatExecutor.submit(() -> sendAppendEntries(serv));
-                }
+            this.state.getClusterDetails().get(clusterIndex).stream().forEach(serv -> {
+                // @TODO :: new executor here!!
+                this.heartBeatExecutor.submit(() -> sendLoadBalancerEntries(serv, clusterIndex));
             });
         } catch (Exception e) {
-            logger.error("[initiateLBProcessor] excp :: "+ e);
+            logger.error("[initiateLBProcessorWrapper] excp :: "+ e);
         }
     }
 
-    private void sendLoadBalancerEntries(Raft.ServerConnect server) {
+    private void sendLoadBalancerEntries(Raft.ServerConnect server, int clusterIndex) {
+
         logger.debug("[sendLoadBalancerEntries] : Sending request to " + server.getServerId() + " at "+System.currentTimeMillis());
         List<Raft.LogEntry> entryToSend = new ArrayList<>();
-        Raft.AppendEntriesRequest.Builder requestBuilder = Raft.AppendEntriesRequest.newBuilder();
+        Loadbalancer.LoadBalancerRequest.Builder requestBuilder = Loadbalancer.LoadBalancerRequest.newBuilder();
         try {
             if (this.state.getNodeType() != Role.LEADER) {
                 logger.debug("[sendLoadBalancerEntries] : Current node is not leader so cant send load balancer entries");
                 return;
             }
+            if(this.state.getLastLoadBalancerProcessed().get(clusterIndex) == -1) {
+                logger.info("[sendLoadBalancerEntries] getLastLoadBalancerProcessed for cluster "+clusterIndex+" is -1");
+                return;
+            }
+            for (long i = this.state.getLastLoadBalancerProcessed().get(clusterIndex);
+                        i <= this.state.getLastLoadBalancerLogIndex().get(clusterIndex); ++i) {
+                if(this.state.getLoadBalancerEntries().get(clusterIndex).size() < i) {
+                    logger.info("[sendLoadBalancerEntries] CLuster Entries for "+clusterIndex+" is small than index :: " +i);
+                    continue;
+                }
+                entryToSend.add(this.state.getLoadBalancerEntries().get(clusterIndex).get((int) i));
+            }
+            requestBuilder.addAllEntries(entryToSend);
+            logger.debug("[sendAppendEntries] Final Request :: "+ requestBuilder.toString());
+        } catch (Exception e) {
+            logger.debug("[sendLoadBalancerEntries] after response ex : " + e);
+        }
+
+        logger.debug("[sendLoadBalancerEntries] : before call : " + server.getServerId());
+        Raft.Endpoint endpoint = server.getEndpoint();
+        ManagedChannel channel = ManagedChannelBuilder.forAddress(endpoint.getHost(), endpoint.getPort()).usePlaintext().build();
+
+        lock.lock();
+        try {
+            LoadBalancerRequestServiceGrpc.LoadBalancerRequestServiceBlockingStub loadBalancerRequestServiceStub = LoadBalancerRequestServiceGrpc.newBlockingStub(channel);
+            Loadbalancer.LoadBalancerResponse response = loadBalancerRequestServiceStub.sendEntries(requestBuilder.build());
+            int ind = 0;
+            for (long i = this.state.getLastLoadBalancerProcessed().get(clusterIndex);
+                 i <= this.state.getLastLoadBalancerLogIndex().get(clusterIndex); ++i) {
+                logger.debug("[sendLoadBalancerEntries] Response :: "+response.getSuccess(ind));
+                this.state.getLoadBalancerProcessStatus().get(clusterIndex).set((int) i, response.getSuccess(ind));
+            }
+            logger.debug("[sendLoadBalancerEntries] Final status for cluster :: "+this.state.getLoadBalancerProcessStatus().get(clusterIndex));
         } catch (Exception e) {
             logger.debug("[sendLoadBalancerEntries] after response ex : " + e);
         } finally {
+            lock.unlock();
+            channel.shutdown();
         }
     }
     private void sendAppendEntries(Raft.ServerConnect server) {
@@ -543,7 +595,10 @@ public class Server {
             int numOfEntries = 1;
             //TODO should we pull the leader check code there ?
             //TODO add cmd type from params and make this into a loop
-            Raft.Command command = Raft.Command.newBuilder().setCommandType("Something").setKey(key).setValue(val).build();
+            // @TODO :: Remove this
+            String tempKey = Long.toString(key);
+            String tempVal = Long.toString(val);
+            Raft.Command command = Raft.Command.newBuilder().setCommandType("Something").setKey(tempKey).setValue(tempVal).build();
             String requestId = String.valueOf(UUID.randomUUID());
             Raft.LogEntry logEntry = Raft.LogEntry.newBuilder().setRequestId(requestId)
                                             .setCommand(command)

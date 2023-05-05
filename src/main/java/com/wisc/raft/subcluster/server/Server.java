@@ -482,7 +482,10 @@ public class Server {
             int numOfEntries = 1;
             //TODO should we pull the leader check code there ?
             //TODO add cmd type from params and make this into a loop
-            Raft.Command command = Raft.Command.newBuilder().setCommandType("Something").setKey(key).setValue(val).build();
+            // @TODO :: Remove this
+            String tempKey = Long.toString(key);
+            String tempVal = Long.toString(val);
+            Raft.Command command = Raft.Command.newBuilder().setCommandType("Something").setKey(tempKey).setValue(tempVal).build();
             String requestId = String.valueOf(UUID.randomUUID());
             Raft.LogEntry logEntry = Raft.LogEntry.newBuilder().setRequestId(requestId)
                                             .setCommand(command)
