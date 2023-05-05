@@ -1,6 +1,7 @@
 package com.wisc.raft.loadbalancer.service;
 
-import com.wisc.raft.loadbalancer.dto.CommitReturnObject;
+import com.wisc.raft.loadbalancer.dto.ReadLBObject;
+import com.wisc.raft.proto.Raft;
 import javafx.util.Pair;
 import lombok.Getter;
 import lombok.Setter;
@@ -10,10 +11,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.ConcurrentLinkedDeque;
-import java.util.stream.Collectors;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.iq80.leveldb.impl.Iq80DBFactory.factory;
 
@@ -24,19 +25,18 @@ public class LoadBalancerDatabase {
     private String path;
     private DB db;
 
-    ConcurrentLinkedDeque<Pair<String, Integer>> queue;
-
+    ConcurrentHashMap<byte[], Integer> concurrentCleanUpList;
     int keep = 3;
 
     public LoadBalancerDatabase(String path) {
         Options options = new Options();
         options.createIfMissing(true);
-        queue = new ConcurrentLinkedDeque<>();
+        concurrentCleanUpList = new ConcurrentHashMap<>();
         this.path = path;
         try {
             db = factory.open(new File(this.path), options);
         } catch (Exception e) {
-            System.out.println("Error in Database creation : " + e);
+            System.out.println("[LbDatabase] Error in Database creation : " + e);
         }
     }
 
@@ -49,75 +49,102 @@ public class LoadBalancerDatabase {
     }
 
     // Deserialize a byte array to an object
-    public static List<Integer> deserialize(byte[] data) throws Exception {
+    public static List<Pair<Integer, Integer>> deserialize(byte[] data) throws Exception {
         ByteArrayInputStream in = new ByteArrayInputStream(data);
         ObjectInputStream is = new ObjectInputStream(in);
-        return (List<Integer>) is.readObject();
+        return (List<Pair<Integer, Integer>>) is.readObject();
     }
 
-    public CommitReturnObject commit(String key, int clusterId) {
-        byte[] keyBytes = key.getBytes();
+    public int commit(Raft.LogEntry logEntry) {
+        byte[] keyBytes = ByteBuffer.allocate(Long.BYTES).putLong(logEntry.getCommand().getKey()).array();
         if (Objects.isNull(keyBytes)) {
-            logger.error("[Database] Key cannot not be serialized");
-            return new CommitReturnObject(-1);
-        }
-        try {
-            if (Objects.isNull(keyBytes)) {
-                logger.error("[Database] LogEntry cannot not be serialized");
-                return new CommitReturnObject(-3);
-            }
-            byte[] bytesValue = db.get(keyBytes);
-            List<Integer> currList = deserialize(bytesValue);
-
-            currList.add(clusterId);
-            CommitReturnObject commitReturnObject = new CommitReturnObject(1);
-            if (currList.size() >= keep) {
-                List<Integer> toBeCleaned = currList.subList(0, keep);
-                //queue.addAll(toBeCleaned.stream().map(x -> new Pair<String,Integer>(key,x)).collect(Collectors.toList()));
-                List<Pair<String, Integer>> collect = toBeCleaned.stream().map(x -> new Pair<String, Integer>(key, x)).collect(Collectors.toList());
-                commitReturnObject.setToBeDeleted(collect);
-                currList.clear();
-            }
-            byte[] serialize = serialize(currList);
-            db.put(keyBytes, serialize);
-
-            return commitReturnObject;
-        } catch (Exception e) {
-            logger.error("[Database] Exception while serializing : " + e + " key : " + key);
-        }
-        return new CommitReturnObject(-2);
-    }
-
-    public long read(String key) {
-        byte[] keyBytes = key.getBytes();
-        if (Objects.isNull(keyBytes)) {
-            logger.error("[Database] Object not retrieved");
+            logger.error("[LbDatabase] Key cannot not be serialized");
             return -1;
         }
-        byte[] bytes = db.get(keyBytes);
         try {
-            List<Integer> listOfVersion = deserialize(bytes);
-            return listOfVersion.get(listOfVersion.size() - 1);
+            byte[] object = serialize(logEntry);
+            if (Objects.isNull(keyBytes)) {
+                logger.error("[LbDatabase] LogEntry cannot not be serialized");
+                return 1;
+            }
+            db.put(keyBytes, object);
+            return 0;
         } catch (Exception e) {
-            logger.error("[Database] Exception while deserializing : " + e);
+            logger.error("[LbDatabase] Exception while serializing : " + e + " key" + logEntry);
         }
-        return -2;
+        return 0;
+    }
+
+
+
+    //Returns ClusterID
+    public ReadLBObject read(String key) {
+        ReadLBObject readLBObject = new ReadLBObject();
+        byte[] keyBytes = key.getBytes();
+        if (Objects.isNull(keyBytes)) {
+            logger.error("[LbDatabase] Object not retrieved");
+            readLBObject.setReturnVal(-1);
+            return readLBObject;
+        }
+        byte[] bytes = db.get(keyBytes);
+        if(bytes == null){
+            logger.error("[LbDatabase] No key exists " );
+            readLBObject.setReturnVal(-2);
+            readLBObject.setVersionNumber(1);
+            return readLBObject;
+        }
+        try {
+            List<Pair<Integer, Integer>> listOfVersion = deserialize(bytes);
+            if(listOfVersion.isEmpty()){
+                readLBObject.setReturnVal(-2);
+                readLBObject.setVersionNumber(1);
+                return readLBObject;
+            }
+            if(listOfVersion.size() > keep){
+                concurrentCleanUpList.put(keyBytes,0);
+            }
+            readLBObject.setReturnVal(0);
+            readLBObject.setClusterId(listOfVersion.get(listOfVersion.size() - 1).getKey());
+            readLBObject.setVersionNumber(listOfVersion.get(listOfVersion.size() - 1).getValue());
+
+            return readLBObject;
+        } catch (Exception e) {
+            logger.error("[LbDatabase] Exception while deserializing : " + e);
+        }
+        readLBObject.setReturnVal(-3);
+        return readLBObject;
     }
 
     public boolean remove(String key) {
         byte[] keyBytes = key.getBytes();
         if (Objects.isNull(keyBytes)) {
-            logger.error("[Database] Object not available for delete");
+            logger.error("[LbDatabase] Object not available for delete");
             return false;
         }
         try {
             db.delete(keyBytes);
         } catch (Exception e) {
-            logger.error("[Database] Exception while deleting : " + e);
+            logger.error("[LbDatabase] Exception while deleting : " + e);
             return false;
         }
         return true;
     }
+
+    public void cleanUp(){
+        concurrentCleanUpList.forEach((key, value) -> {
+            try {
+                byte[] bytes = db.get(key);
+                List<Pair<Integer, Integer>> valList = deserialize(bytes);
+                valList.subList(valList.size() - keep, valList.size());
+                db.put(key, serialize(valList));
+                concurrentCleanUpList.remove(key);
+            }
+            catch(Exception e){
+                logger.error("[LbDatabase] Exception while deleting : " + e);
+            }
+        });
+    }
+
 
 
 }
