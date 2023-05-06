@@ -6,7 +6,6 @@ import com.wisc.raft.loadbalancer.service.LoadBalancerLiveLinessService;
 import com.wisc.raft.proto.*;
 import com.wisc.raft.loadbalancer.constants.Role;
 import com.wisc.raft.loadbalancer.service.RaftConsensusService;
-import com.wisc.raft.loadbalancer.service.LoadBalancerService;
 import com.wisc.raft.loadbalancer.state.NodeState;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
@@ -409,21 +408,21 @@ public class LoadBalancerServer {
             logger.debug("[initiateLBProcessor] Not a leader! So not participating in Load Balancer Processing!");
             return;
         }
-        logger.debug("[initiateLBProcessor] getClusterDetails :: "+this.state.getClusterDetails());
+        logger.debug("[initiateLBProcessor] getClusterDetails :: " + this.subClusterList);
         logger.debug("[initiateLBProcessor] getLoadBalancerEntries :: "+this.state.getLoadBalancerEntries());
         logger.debug("[initiateLBProcessor] getLoadBalancerSnapshot :: "+this.state.getLoadBalancerSnapshot());
         logger.debug("[initiateLBProcessor] getLastLoadBalancerCommitIndex :: "+this.state.getLastLoadBalancerCommitIndex());
         logger.debug("[initiateLBProcessor] getLastLoadBalancerProcessed :: "+this.state.getLastLoadBalancerProcessed());
         logger.debug("[initiateLBProcessor] getLastLoadBalancerLogIndex :: "+this.state.getLastLoadBalancerLogIndex());
-        if (this.state.getClusterDetails().size() != this.state.getLoadBalancerEntries().size()
-                || this.state.getClusterDetails().size() != this.state.getLoadBalancerSnapshot().size()
-                || this.state.getClusterDetails().size() != this.state.getLastLoadBalancerCommitIndex().size()
-                || this.state.getClusterDetails().size() != this.state.getLastLoadBalancerProcessed().size()
-                || this.state.getClusterDetails().size() != this.state.getLastLoadBalancerLogIndex().size()) {
+        if (this.subClusterList.size() != this.state.getLoadBalancerEntries().size()
+                || this.subClusterList.size() != this.state.getLoadBalancerSnapshot().size()
+                || this.subClusterList.size() != this.state.getLastLoadBalancerCommitIndex().size()
+                || this.subClusterList.size() != this.state.getLastLoadBalancerProcessed().size()
+                || this.subClusterList.size() != this.state.getLastLoadBalancerLogIndex().size()) {
             logger.info("Entries and cluster sizes dont match! Possible scnenario of scaling being happening!?");
             return;
         }
-        for(int i = 0; i < this.state.getClusterDetails().size(); ++i){
+        for(int i = 0; i < this.subClusterList.size(); ++i){
             initiateLBProcessorWrapper(i);
         }
     }
@@ -454,19 +453,20 @@ public class LoadBalancerServer {
                     logger.debug(le.getTerm() + " :: " + le.getCommand().getKey() +" -> "+le.getCommand().getValue()));
 
             // @TODO :: Need to send new fresh to-process entries
-            this.state.getClusterDetails().get(clusterIndex).stream().forEach(serv -> {
-                // @TODO :: new executor here!!
-                // @TODO :: send only for cluster leader
-                this.heartBeatExecutor.submit(() -> sendLoadBalancerEntries(serv, clusterIndex));
-            });
+//            this.subClusterList.get(clusterIndex).stream().forEach(serv -> {
+//                // @TODO :: new executor here!!
+//                // @TODO :: send only for cluster leader
+//                this.heartBeatExecutor.submit(() -> sendLoadBalancerEntries(serv, clusterIndex));
+//            });
+            sendLoadBalancerEntries(this.subClusterList.get(clusterIndex), clusterIndex);
         } catch (Exception e) {
             logger.error("[initiateLBProcessorWrapper] excp :: "+ e);
         }
     }
 
-    private void sendLoadBalancerEntries(Raft.ServerConnect server, int clusterIndex) {
+    private void sendLoadBalancerEntries(Cluster.ClusterConnect cluster, int clusterIndex) {
 
-        logger.debug("[sendLoadBalancerEntries] : Sending request to " + server.getServerId() + " at "+System.currentTimeMillis());
+        logger.debug("[sendLoadBalancerEntries] : Sending request to " + cluster.getClusterId() + " at "+System.currentTimeMillis());
         List<Raft.LogEntry> entryToSend = new ArrayList<>();
         Loadbalancer.LoadBalancerRequest.Builder requestBuilder = Loadbalancer.LoadBalancerRequest.newBuilder();
         try {
@@ -492,8 +492,8 @@ public class LoadBalancerServer {
             logger.debug("[sendLoadBalancerEntries] after response ex : " + e);
         }
 
-        logger.debug("[sendLoadBalancerEntries] : before call : " + server.getServerId());
-        Raft.Endpoint endpoint = server.getEndpoint();
+        logger.debug("[sendLoadBalancerEntries] : before call : " + cluster.getClusterId());
+        Cluster.ClusterEndpoint endpoint = cluster.getClusterEndpoint();
         ManagedChannel channel = ManagedChannelBuilder.forAddress(endpoint.getHost(), endpoint.getPort()).usePlaintext().build();
 
         lock.lock();
@@ -609,6 +609,7 @@ public class LoadBalancerServer {
             channel.shutdown();
         }
     }
+
     /**
      * PreCalls - accessed by client -> job is to read the DB and add to Queue
      * TODO Update requestParam to String and also handle read
