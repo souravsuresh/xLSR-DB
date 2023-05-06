@@ -90,6 +90,5 @@ public class NodeState {
         this.loadBalancerEntries = new ArrayList<>();
         this.loadBalancerSnapshot = new ArrayList<>();
         this.loadBalancerProcessStatus = new ArrayList<>();
-        this.clusterDetails = new ConcurrentHashMap<>();                      // @TODO might need to initlaize with initial set of clusters
     }
 }

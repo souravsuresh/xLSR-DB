@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Scanner;
 import java.util.concurrent.ConcurrentHashMap;
@@ -22,10 +23,20 @@ public class AutoScaleService extends AutoScaleGrpc.AutoScaleImplBase {
     private static final Logger logger = LoggerFactory.getLogger(AutoScaleService.class);
     Scanner scanner ;
 
+    private List<String> clusterDetails;
     AutoScaleService(){
         this.scanner = new Scanner(System.in);
+        clusterDetails = new ArrayList<String>(Arrays.asList(
+                "0_locahost_8081_1_locahost_8082_2_locahost_8083",
+                "0_locahost_5081_1_locahost_5082_2_locahost_5083",
+                "0_locahost_6081_1_locahost_6082_2_locahost_6083",
+                "0_locahost_7081_1_locahost_7082_2_locahost_7083"));
     }
 
+    private String getClusterDetails () {
+        logger.info("Cluster Details ::" + clusterDetails);
+        return clusterDetails.size() > 0 ? clusterDetails.remove(0) : null;
+    }
     //TODO Add the leader details into this
     @Override
     public void requestUpScale(Configuration.ScaleRequest request, StreamObserver<Configuration.ScaleResponse> response) {
@@ -36,7 +47,8 @@ public class AutoScaleService extends AutoScaleGrpc.AutoScaleImplBase {
             int count = request.getClusterSize();
             for(int i=0;i<count;i++){
                 logger.info("Please enter 1 cluster details in a single line, With leader details first");
-                String clusterString = scanner.nextLine();
+//                String clusterString = scanner.nextLine();  // 0_localhost_9000_
+                String clusterString = getClusterDetails();  // 0_localhost_9000_
                 String[] s = clusterString.split("_");
                 Configuration.ServerDetails.Builder serverDetailsBuilder = Configuration.ServerDetails.newBuilder();
 

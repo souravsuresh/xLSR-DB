@@ -1,12 +1,13 @@
 package com.wisc.raft.loadbalancer.server;
 
+import com.wisc.raft.autoscaler.AutoScaleService;
+import com.wisc.raft.loadbalancer.constants.Role;
 import com.wisc.raft.loadbalancer.dto.ReadLBObject;
 import com.wisc.raft.loadbalancer.service.LoadBalancerDatabase;
 import com.wisc.raft.loadbalancer.service.LoadBalancerLiveLinessService;
-import com.wisc.raft.proto.*;
-import com.wisc.raft.loadbalancer.constants.Role;
 import com.wisc.raft.loadbalancer.service.RaftConsensusService;
 import com.wisc.raft.loadbalancer.state.NodeState;
+import com.wisc.raft.proto.*;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import javafx.util.Pair;
@@ -22,6 +23,7 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Getter
@@ -54,6 +56,7 @@ public class LoadBalancerServer {
     private ScheduledExecutorService liveLinessSchedulerService;
     private ScheduledExecutorService cleanUpVersionService;
 
+    private AutoScaleService autoScaleService;
 
     private ScheduledFuture electionScheduler;
     private ScheduledFuture heartBeatScheduler;
@@ -84,15 +87,17 @@ public class LoadBalancerServer {
 
     private PriorityQueue<Pair<Long, Double>> subClusterUtilizationQueue;
 
-    private ConcurrentHashMap<Integer, Cluster.ClusterConnect> subClusterMap;
 
-
-    public LoadBalancerServer(String nodeId, LoadBalancerDatabase db) {
+    String autoScalerHostName;
+    int autoScalerPortNumber ;
+    public LoadBalancerServer(String nodeId, LoadBalancerDatabase db, int autoScalerPortNumber, String autoScalerHostName) {
         this.state = new NodeState(nodeId);
         if (Objects.isNull(db)) {
             logger.error("Level-DB is not setup properly! (Solution: Check if there is leveldb_<> file as mentioned in this log and delete/ just rerun!)");
         }
         this.db = db;
+        this.autoScalerPortNumber = autoScalerPortNumber;
+        this.autoScalerHostName = autoScalerHostName;
     }
 
     public void init() {
@@ -621,7 +626,7 @@ public class LoadBalancerServer {
         String key = String.valueOf(request.getKey());
         if(db.getCacheEntry().containsKey(key) && request.getCommandType().equals("READ")){
             int clusterId = db.getCacheEntry().get(key).getValue();
-            if (subClusterMap.containsKey(clusterId)) {
+            if (subClusterList.size() < clusterId) {
 
 //                Loadbalancer.DataRequestObject.Builder builder = Loadbalancer.DataRequestObject.newBuilder();
 //                logger.debug("[LoadBalancerServer], found the key, Mapping to an LogEntry");
@@ -640,7 +645,7 @@ public class LoadBalancerServer {
             Pair<Integer,Integer> pair = new Pair<>(integerIntegerPair.getKey()+1, integerIntegerPair.getValue());
 
             int clusterId = db.getCacheEntry().get(key).getValue();
-            if (subClusterMap.containsKey(clusterId)) {
+            if (subClusterList.size() < clusterId) {
 
 //                Loadbalancer.DataRequestObject.Builder builder = Loadbalancer.DataRequestObject.newBuilder();
 //                logger.debug("[LoadBalancerServer], found the key, Mapping to an LogEntry");
@@ -663,7 +668,7 @@ public class LoadBalancerServer {
         if (request.getCommandType().equals("READ")) {
             int clusterId = readLBObject.getClusterId();
 
-            if (subClusterMap.containsKey(clusterId)) {
+            if (subClusterList.size() < clusterId) {
 
 //                Loadbalancer.DataRequestObject.Builder builder = Loadbalancer.DataRequestObject.newBuilder();
 //                logger.debug("[LoadBalancerServer], found the key, Mapping to an LogEntry");
@@ -719,9 +724,59 @@ public class LoadBalancerServer {
     }
 
     private void initiateLiveLinessProbesRPC() {
-        subClusterList.stream().forEach(sc -> {
-            liveLinessExecutor.submit(() -> loadBalancerLiveLinessService.checkLiveliness(sc));
-        });
+        try {
+            List<Future<Double>> collect = subClusterList.stream().map(sc -> {
+                        return liveLinessExecutor.submit(() -> loadBalancerLiveLinessService.checkLiveliness(sc));
+                    }
+            ).collect(Collectors.toList());
+
+            double sum = 0;
+            for (int i = 0; i < collect.size(); i++) {
+                try {
+                    sum += collect.get(i).get();
+                } catch (InterruptedException e) {
+                    logger.error("[initiateLiveLinessProbesRPC] Exception found in  :: ", e);
+                } catch (ExecutionException e) {
+                    logger.error("[initiateLiveLinessProbesRPC] Exception found in  :: ", e);
+                }
+            }
+
+            if (sum / subClusterList.size() > 80) {
+                Configuration.ScaleRequest scaleRequest = Configuration.ScaleRequest.newBuilder().setAbsoluteMajority(2).setClusterSize(1).build();
+                ManagedChannel channel = ManagedChannelBuilder.forAddress(autoScalerHostName, autoScalerPortNumber).usePlaintext().build();
+                AutoScaleGrpc.AutoScaleBlockingStub autoScaleBlockingStub = AutoScaleGrpc.newBlockingStub(channel);
+                Configuration.ScaleResponse scaleResponse = autoScaleBlockingStub.requestUpScale(scaleRequest);
+//                Cluster.ClusterConnect clusterConnect = scaleResponse.getClusterDetails();
+                //Cluster.ClusterConnect clusterConnect = scaleResponse.getClusterDetails();
+                boolean isCreated = scaleResponse.getIsCreated();
+                boolean inProgress = scaleResponse.getInProgress();
+                List<Configuration.ServerDetails> subClustersList = scaleResponse.getSubClustersList();
+                if (isCreated && inProgress) {
+                    //Assign Key Range to this or whatever
+                    lock.lock();
+                    try {
+                        ConcurrentHashMap<Integer, List<Raft.ServerConnect>> clusterDetails = this.getState().getClusterDetails();
+                        List<List<Raft.LogEntry>> loadBalancerEntries = this.getState().getLoadBalancerEntries();
+                        List<List<Raft.LogEntry>> loadBalancerSnapshots = this.getState().getLoadBalancerSnapshot();
+                        List<List<Boolean>> loadBalancerProcessStates = this.getState().getLoadBalancerProcessStatus();
+                        for (int i = 0; i < subClustersList.size(); i++) {
+                            int x = clusterDetails.size();
+                            clusterDetails.put(x, subClustersList.get(i).getServerConnectsList());
+                            loadBalancerEntries.add(new ArrayList<>());
+                            loadBalancerSnapshots.add(new ArrayList<>());
+                            loadBalancerProcessStates.add(new ArrayList<>());
+                        }
+                    } finally {
+                        lock.unlock();
+                    }
+                }
+            } else {
+                logger.debug("[initiateLiveLinessProbesRPC] Cluster usage ", sum / subClusterList.size());
+            }
+        }
+        catch(Exception e){
+            logger.error("[initiateLiveLinessProbesRPC] Found an exception, please check", e);
+        }
     }
 
 

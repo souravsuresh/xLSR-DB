@@ -9,7 +9,6 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -21,6 +20,7 @@ public class LoadBalancerLiveLinessService {
 
     LoadBalancerServer loadBalancerServer;
     ConcurrentHashMap<Integer,Integer> checkStatus; // For now putting this here, need to be accessed by other service which needs to rest this to zero
+    ConcurrentHashMap<Integer,Double> prevUtilization; // For now putting this here, need to be accessed by other service which needs to rest this to zero
 
     Lock lock;
 
@@ -30,6 +30,7 @@ public class LoadBalancerLiveLinessService {
     //Assuming this comes from somewhere
     LoadBalancerLiveLinessService(ConcurrentHashMap<Integer,Integer> checkStatus, int limit){
         this.checkStatus = checkStatus;
+        prevUtilization = new ConcurrentHashMap();
         this.retryLimit = limit;
         this.lock = new ReentrantLock();
     }
@@ -37,7 +38,7 @@ public class LoadBalancerLiveLinessService {
 
 
 
-    public void checkLiveliness(Cluster.ClusterConnect  clusterConnect){
+    public double checkLiveliness(Cluster.ClusterConnect  clusterConnect){
         Raft.UtilizationRequest.Builder utilizationRequestBuilder = Raft.UtilizationRequest.newBuilder();
         Raft.UtilizationRequest utilizationRequest = utilizationRequestBuilder.setLeaderId(String.valueOf(clusterConnect.getClusterLeaderId())).build();
         ManagedChannel channel = ManagedChannelBuilder.forAddress(clusterConnect.getClusterEndpoint().getHost(), clusterConnect.getClusterEndpoint().getPort()).usePlaintext().build();
@@ -47,40 +48,66 @@ public class LoadBalancerLiveLinessService {
             int retValue = response.getReturnVal();
             if(retValue == 1){
                 //Reset
+
                 checkStatus.put(clusterConnect.getClusterLeaderId(),  0);
+                prevUtilization.put(clusterConnect.getClusterLeaderId(), (double) response.getUtilizationPercentage());
+                return response.getUtilizationPercentage();
             }
             else if(retValue == -1){
                 logger.error("[LoadBalancerLiveLinessService] exception occurred during calculation or other generic crap");
+                if(prevUtilization.containsKey(clusterConnect.getClusterLeaderId())){
+                    return prevUtilization.get(clusterConnect.getClusterLeaderId());
+                }
+                else{
+                    return 100;
+                }
             }
             else if(retValue == -2){
                 logger.error("[LoadBalancerLiveLinessService] Something went wrong not sure is this required");
+                if(prevUtilization.containsKey(clusterConnect.getClusterLeaderId())){
+                    return prevUtilization.get(clusterConnect.getClusterLeaderId());
+                }
+                else{
+                    return 100;
+                }
+
             }
             else if(retValue == -3){
                 logger.error("[LoadBalancerLiveLinessService] Threshold breached, update count");
                 checkStatus.put(clusterConnect.getClusterId(),  checkStatus.get(clusterConnect.getClusterLeaderId()) + 1);
                 if(checkStatus.get(String.valueOf(clusterConnect.getClusterId())) >= 3){
-                    logger.error("[LoadBalancerLiveLinessService] Split please");
-                    Configuration.ScaleRequest scaleRequest = Configuration.ScaleRequest.newBuilder().setAbsoluteMajority(2).setClusterSize(3).build();
-
-
-                    if(callAutoScaler(scaleRequest)){
-                        logger.info("[LoadBalancerLiveLinessService] AutoScale Success");
+                    return 100;
+                    //Use this to do something still figuring out
+                }
+                else{
+                    if(prevUtilization.containsKey(clusterConnect.getClusterLeaderId())){
+                        return prevUtilization.get(clusterConnect.getClusterLeaderId());
                     }
                     else{
-                        logger.info("[LoadBalancerLiveLinessService] AutoScale Failed");
-
+                        return 100;
                     }
-                    //Use this to do something still figuring out
+
                 }
             }
             else if(retValue == -4){
                 logger.error("[LoadBalancerLiveLinessService] Hit A candidate");
                 checkStatus.put(clusterConnect.getClusterId(), checkStatus.get(clusterConnect.getClusterId()) + 1);
+                if(prevUtilization.containsKey(clusterConnect.getClusterLeaderId())){
+                    return prevUtilization.get(clusterConnect.getClusterLeaderId());
+                }
+                else{
+                    return 100;
+                }
             }
             else if(retValue == -2){
                 logger.error("[LoadBalancerLiveLinessService] Hit A Follower");
                 checkStatus.put(clusterConnect.getClusterId(), checkStatus.get(clusterConnect.getClusterId()) + 1);
-
+                if(prevUtilization.containsKey(clusterConnect.getClusterLeaderId())){
+                    return prevUtilization.get(clusterConnect.getClusterLeaderId());
+                }
+                else{
+                    return 100;
+                }
             }
 
         }
@@ -89,6 +116,13 @@ public class LoadBalancerLiveLinessService {
         }
         finally {
             channel.shutdown();
+        }
+
+        if(prevUtilization.containsKey(clusterConnect.getClusterLeaderId())){
+            return prevUtilization.get(clusterConnect.getClusterLeaderId());
+        }
+        else{
+            return 100;
         }
 
     }

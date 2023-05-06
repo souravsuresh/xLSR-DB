@@ -39,9 +39,9 @@ public class RaftServer {
             Raft.ServerConnect server = Raft.ServerConnect.newBuilder().setServerId(serverId).setEndpoint(endpoint).build();
             serverList.add(server);
         }
-        LoadBalancerServer raftServer = new LoadBalancerServer(args[0], database);
+        LoadBalancerServer raftServer = new LoadBalancerServer(args[0], database,  10000, "localhost" );
         raftServer.setCluster(serverList);
-//        ServerClientConnectionService clientConnectionService = new ServerClientConnectionService(raftServer);
+//       ServerClientConnectionService clientConnectionService = new ServerClientConnectionService(raftServer);
         RaftConsensusService raftConsensusService = new RaftConsensusService(raftServer);
         logger.debug("[Sys Args] "+args.toString());
         io.grpc.Server server = ServerBuilder.forPort(Integer.parseInt(args[1])).addService(raftConsensusService).addService(raftConsensusService).build();
