@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package com.wisc.raft.proto;
 import "cluster.proto";
+import "raft.proto";
+
 
 
 service AutoScale{
@@ -16,12 +18,16 @@ message ScaleDownRequest{
 message ScaleResponse{
   bool isCreated = 1;
   bool inProgress = 2;
-  ClusterConnect clusterDetails = 3;
+  repeated ServerDetails subClusters = 3;
 }
 
 message ScaleRequest{
   sint32 clusterSize=1;
   sint32 absoluteMajority=2;
+
   //Can add read & write Majority
 }
 
+message ServerDetails{
+  repeated ServerConnect serverConnects = 1;
+}

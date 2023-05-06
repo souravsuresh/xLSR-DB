@@ -8,6 +8,7 @@ import lombok.Setter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Getter
 @Setter
@@ -21,7 +22,7 @@ public class NodeState {
     private List<Raft.LogEntry> snapshot;
 
     // load balancer related states
-    private HashMap<String, List<Raft.ServerConnect>> clusterDetails;       // cluster id to cluster details [localhost:8080, locahost:8081,...]
+    private ConcurrentHashMap<Integer, List<Raft.ServerConnect>> clusterDetails;       // cluster id to cluster details [localhost:8080, locahost:8081,...]
     private List<List<Raft.LogEntry>> loadBalancerEntries;
     private List<List<Raft.LogEntry>> loadBalancerSnapshot;
     private List<List<Boolean>> loadBalancerProcessStatus;      // status of that key within the process list
@@ -89,6 +90,6 @@ public class NodeState {
         this.loadBalancerEntries = new ArrayList<>();
         this.loadBalancerSnapshot = new ArrayList<>();
         this.loadBalancerProcessStatus = new ArrayList<>();
-        this.clusterDetails = new HashMap<>();                      // @TODO might need to initlaize with initial set of clusters
+        this.clusterDetails = new ConcurrentHashMap<>();                      // @TODO might need to initlaize with initial set of clusters
     }
 }
