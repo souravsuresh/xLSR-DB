@@ -55,6 +55,7 @@ public class LoadBalancerServer {
     private ScheduledExecutorService commitSchedulerService;
     private ScheduledExecutorService replySchedulerService;
     private ScheduledExecutorService liveLinessSchedulerService;
+    private ScheduledExecutorService loadBalancerProcessorSchedulerService;
     private ScheduledExecutorService cleanUpVersionService;
 
     private AutoScaleService autoScaleService;
@@ -63,6 +64,7 @@ public class LoadBalancerServer {
     private ScheduledFuture heartBeatScheduler;
     private ScheduledFuture commitScheduler;
     private ScheduledFuture replyScheduler;
+    private ScheduledFuture loadBalancerProcessorScheduler;
 
     private static long lbRejectionRetries = 0;
 
@@ -71,6 +73,7 @@ public class LoadBalancerServer {
     private ThreadPoolExecutor commitExecutor;
     private ThreadPoolExecutor replyExecutor;
     private ThreadPoolExecutor liveLinessExecutor;
+    private ThreadPoolExecutor loadBalancerProcessorExecutor;
 
 
     private ExecutorService appendEntriesExecutor;
@@ -121,10 +124,11 @@ public class LoadBalancerServer {
 
         Runnable initiateElectionRPCRunnable = () -> initiateElectionRPC();
         Runnable initiateHeartbeatRPCRunnable = () -> initiateHeartbeatRPC();
-        //Runnable initiateElectionExecutorRunnable = () -> initiateCommitScheduleRPC();
+        Runnable initiateCommitRPCRunnable = () -> initiateCommitScheduleRPC();
         //Runnable replyClientExecutorRunnable = () -> initiateReplyScheduleRPC();
         Runnable sendLiveLinessProbesRunnable = () -> initiateLiveLinessProbesRPC();
         Runnable cleanUpVersionsRunnable = () -> initiateCleanUpVersions();
+        Runnable loadBalancerProcessorRunnable = () -> initiateLBProcessor();
 
         this.electionExecutor = new ThreadPoolExecutor(cluster.size(), cluster.size(), 60, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>());
         this.heartBeatExecutor = new ThreadPoolExecutor(cluster.size(), cluster.size(), 60, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>());
@@ -138,49 +142,56 @@ public class LoadBalancerServer {
         cleanUpVersionService = Executors.newSingleThreadScheduledExecutor();
         cleanUpVersionService.scheduleAtFixedRate(cleanUpVersionsRunnable,1,1,TimeUnit.HOURS);
         liveLinessSchedulerService.scheduleAtFixedRate(sendLiveLinessProbesRunnable, 0, 10, TimeUnit.SECONDS);
-        electionScheduler = electionExecutorService.scheduleAtFixedRate(initiateElectionRPCRunnable, 1, 2, TimeUnit.SECONDS);
+        electionScheduler = electionExecutorService.scheduleAtFixedRate(initiateElectionRPCRunnable, 2, 14, TimeUnit.SECONDS);
+
 //        electionScheduler = electionExecutorService.scheduleAtFixedRate(initiateElectionRPCRunnable, 1L, (long) (100 + random.nextDouble() * 100), TimeUnit.MILLISECONDS);
         heartbeatExecutorService = Executors.newSingleThreadScheduledExecutor();
-        heartBeatScheduler = heartbeatExecutorService.scheduleAtFixedRate(initiateHeartbeatRPCRunnable, 1, 1, TimeUnit.SECONDS);
+        heartBeatScheduler = heartbeatExecutorService.scheduleAtFixedRate(initiateHeartbeatRPCRunnable, 1, 7, TimeUnit.SECONDS);
 //        heartBeatScheduler = heartbeatExecutorService.scheduleAtFixedRate(initiateHeartbeatRPCRunnable, 1500, 80, TimeUnit.MILLISECONDS);
+        loadBalancerProcessorSchedulerService = Executors.newSingleThreadScheduledExecutor();
+        loadBalancerProcessorScheduler = loadBalancerProcessorSchedulerService.scheduleAtFixedRate(loadBalancerProcessorRunnable, 2, 7, TimeUnit.SECONDS);
+
+        commitSchedulerService = Executors.newSingleThreadScheduledExecutor();
+        commitScheduler = commitSchedulerService.scheduleAtFixedRate(initiateCommitRPCRunnable, 2, 10, TimeUnit.SECONDS);
+
     }
 
-
-    private void initiateReplyScheduleRPC(){
-        if(this.state.getNodeType().equals(Role.LEADER)) {
-            System.out.println(persistentStore);
-            Map<String, Pair<ServerClientConnectionGrpc.ServerClientConnectionBlockingStub, ManagedChannel>> clientChannels = new HashMap<>();
-            for (String reqId : persistentStore.keySet()) {
-//                    try {
-                if (persistentStore.get(reqId) != null) {
-
-                    String[] split = persistentStore.get(reqId).getKey().split(":");
-                    String clientId = persistentStore.get(reqId).getKey();
-
-                    if (!clientChannels.containsKey(clientId)) {
-                        ManagedChannel clientChannel = ManagedChannelBuilder.forAddress(split[0], Integer.parseInt(split[1])).usePlaintext().build();
-                        clientChannels.put(clientId, new Pair<>(ServerClientConnectionGrpc.newBlockingStub(clientChannel), clientChannel));
-                    }
-                    clientChannels.get(clientId).getKey().talkBack(Client.StatusUpdate.newBuilder().setReqId(reqId).setReturnVal(persistentStore.get(reqId).getValue()).build());
-                    persistentStore.remove(reqId);
-
-                }
-//                }
-            }
-
-            for (Pair<ServerClientConnectionGrpc.ServerClientConnectionBlockingStub, ManagedChannel> clientChannel : clientChannels.values()) {
-                clientChannel.getValue().shutdownNow();
-            }
+    private void checkAndCommitFromLoadBalancerProcessor(int clusterIndex) {
+        if(this.state.getLoadBalancerEntries().get(clusterIndex).size() == 0) {
+            logger.info("[checkAndCommitFromLoadBalancerProcessor] Nothing to commit from LB to DB");
+            return;
         }
-        else{
-            logger.debug("Not a leader so won't be doing");
+        if(this.state.getLastLoadBalancerCommitIndex().get(clusterIndex) == this.state.getLastLoadBalancerProcessed().get(clusterIndex)) {
+            logger.info("[checkAndCommitFromLoadBalancerProcessor] Last log index and commit index are same. Nothing to commit");
+            return;
         }
+
+        for(long i = this.state.getLastLoadBalancerCommitIndex().get(clusterIndex) + 1L;
+                    i <= this.state.getLastLoadBalancerProcessed().get(clusterIndex); ++i){
+            String key = this.state.getLoadBalancerEntries().get(clusterIndex).get((int) i).getCommand().getKey();
+            // @TODO :: check if we want to read and handle version here
+            String value = clusterIndex + "_v1";
+            Raft.LogEntry le = Raft.LogEntry.newBuilder()
+                                    .setCommand(Raft.Command.newBuilder()
+                                                .setValue(value)
+                                                .setKey(key).build())
+                                    .setTerm(this.state.getCurrentTerm())
+                                    .setIndex("METADATA")
+                                    .setRequestId(String.valueOf(UUID.randomUUID())).build();
+            // Adding to snapshot so that LB gets further consensus
+            this.state.getSnapshot().add(le);
+            logger.debug("[checkAndCommitFromLoadBalancerProcessor] "+ le.getTerm() + " :: " + le.getCommand().getKey() +" -> "+le.getCommand().getValue());
+        }
+        this.state.getLastLoadBalancerCommitIndex().set(clusterIndex, this.state.getLastLoadBalancerProcessed().get(clusterIndex));
     }
 
     private void initiateCommitScheduleRPC(){
         lock.lock();
         try {
             if (this.state.getNodeType() == Role.LEADER) {
+                for(int i = 0; i < this.subClusterList.size(); ++i) {
+                    checkAndCommitFromLoadBalancerProcessor(i);
+                }
                 if(this.state.getCommitIndex() <= this.state.getLastApplied() &&  this.state.getCommitIndex() <= this.state.getEntries().size() && this.state.getLastApplied() <=  this.state.getEntries().size()){
                     long index = this.state.getCommitIndex();
                     logger.debug("[CommitSchedule] inside leader commit starting from " + (index + 1) + " to "+ this.state.getLastApplied());
@@ -221,10 +232,22 @@ public class LoadBalancerServer {
             }
         } catch (Exception ex) {
             logger.error("[CommitSchedule] Oops got a intresting exception:: "+ex);
+            ex.printStackTrace();
         }
         finally {
             lock.unlock();
         }
+    }
+
+    private void populateSubclusters() {
+        AtomicInteger c = new AtomicInteger();
+        this.subClusterList.stream().forEach(sc -> {
+            Raft.LogEntry le = Raft.LogEntry.newBuilder().setCommand(Raft.Command.newBuilder().setValue(Integer.toString(random.nextInt(10))).setKey(Integer.toString(random.nextInt(10))).build()).setTerm(this.state.getCurrentTerm()).setIndex("UNIT_TEST").build();
+            logger.info("[UNITTEST-populateSubclusters] Adding le : "+le);
+            this.state.getLoadBalancerSnapshot().get(c.getAndIncrement()).add(le);
+        });
+        // @TODO :: Also test with preCall method
+
     }
     public void initiateElectionRPC() {
         Raft.RequestVote.Builder requestBuilder = Raft.RequestVote.newBuilder();
@@ -232,19 +255,21 @@ public class LoadBalancerServer {
         lock.lock();
         try {
             logger.debug("[initiateElectionRPC] Current time :: " + System.currentTimeMillis() + " HeartBeat timeout time :: " +  (this.state.getHeartbeatTrackerTime() + 5 * 80 * MAX_REQUEST_RETRY));
-            if(this.state.getHeartbeatTrackerTime() != 0 && System.currentTimeMillis() > (this.state.getHeartbeatTrackerTime() +  5 * 80 * MAX_REQUEST_RETRY) ) {
-                logger.info("[initiateElectionRPC] Stepping down as follower at :: "+ System.currentTimeMillis());
-                this.state.setVotedFor(null);
-                this.state.setNodeType(Role.FOLLOWER);
-            }
+            // @TODO UNCOMMENT THIS to step down as follower
+//            if(this.state.getHeartbeatTrackerTime() != 0 && System.currentTimeMillis() > (this.state.getHeartbeatTrackerTime() +  5 * 80 * MAX_REQUEST_RETRY) ) {
+//                logger.info("[initiateElectionRPC] Stepping down as follower at :: "+ System.currentTimeMillis());
+//                this.state.setVotedFor(null);
+//                this.state.setNodeType(Role.FOLLOWER);
+//            }
             if (this.state.getNodeType().equals(Role.LEADER)) {
 
                 logger.debug("[initiateElectionRPC]  Already a leader! So not participating in Election!");
                 //@CHECK :: UNCOMMENT THIS TO TEST APPEND ENTRIES SIMULATING CLIENT
 //                for(int i = 0 ;i < 1; i++){
-//                    this.state.getSnapshot().add(Raft.LogEntry.newBuilder().setCommand(Raft.Command.newBuilder().setValue(Integer.toString(random.nextInt(10))).setKey(Integer.toString(random.nextInt(10))).build()).setTerm(this.state.getCurrentTerm()).setIndex("Bolimaga").build());
+//                    this.state.getSnapshot().add();
 //                }
 //                return;
+                this.populateSubclusters();
                 return;
             }
             if (!Objects.isNull(this.state.getVotedFor()) && this.state.getNodeType().equals(Role.FOLLOWER)) {
@@ -417,14 +442,14 @@ public class LoadBalancerServer {
     }
 
     public void initiateLBProcessor() {
-        logger.debug("[initiateLBProcessor] Log Entries has " + this.state.getLoadBalancerEntries().size() + " entries: " + logAppendRetries);
+        logger.debug("[initiateLBProcessor] Log Entries has " + this.state.getLoadBalancerEntries().size());
         if (!this.state.getNodeType().equals(Role.LEADER)) {
             logger.debug("[initiateLBProcessor] Not a leader! So not participating in Load Balancer Processing!");
             return;
         }
         logger.debug("[initiateLBProcessor] getClusterDetails :: " + this.subClusterList);
-        logger.debug("[initiateLBProcessor] getLoadBalancerEntries :: "+this.state.getLoadBalancerEntries());
-        logger.debug("[initiateLBProcessor] getLoadBalancerSnapshot :: "+this.state.getLoadBalancerSnapshot());
+        logger.debug("[initiateLBProcessor] getLoadBalancerEntries :: "+this.state.getLoadBalancerEntries().size());
+        logger.debug("[initiateLBProcessor] getLoadBalancerSnapshot :: "+this.state.getLoadBalancerSnapshot().size());
         logger.debug("[initiateLBProcessor] getLastLoadBalancerCommitIndex :: "+this.state.getLastLoadBalancerCommitIndex());
         logger.debug("[initiateLBProcessor] getLastLoadBalancerProcessed :: "+this.state.getLastLoadBalancerProcessed());
         logger.debug("[initiateLBProcessor] getLastLoadBalancerLogIndex :: "+this.state.getLastLoadBalancerLogIndex());
@@ -436,6 +461,13 @@ public class LoadBalancerServer {
             logger.info("Entries and cluster sizes dont match! Possible scnenario of scaling being happening!?");
             return;
         }
+
+        //@TODO :: Make it async to go with all clusters in parallel
+//        this.subClusterList.get(clusterIndex).stream().forEach(serv -> {
+//                // @TODO :: new executor here!!
+//                // @TODO :: send only for cluster leader
+//                this.heartBeatExecutor.submit(() -> sendLoadBalancerEntries(serv, clusterIndex));
+//            });
         for(int i = 0; i < this.subClusterList.size(); ++i){
             initiateLBProcessorWrapper(i);
         }
@@ -444,43 +476,62 @@ public class LoadBalancerServer {
 
         try {
             logger.debug("[initiateLBProcessorWrapper] Last Processed :" + this.state.getLastLoadBalancerProcessed().get(clusterIndex) +
-                    " || GetLoadBalancerLastIndex : "+ this.state.getLastLoadBalancerLogIndex().get(clusterIndex));
+                    " || GetLoadBalancerLastIndex : "+ this.state.getLastLoadBalancerLogIndex().get(clusterIndex) + " || " +this.state.getLoadBalancerProcessStatus().get(clusterIndex));
 
             // if getLastLogIndex is 0 then its a initial case where currnet node is starting fresh
             // && validating if all the elements within process list (elements between lastProcess - lastLBLogIndex
+            if(this.state.getLoadBalancerSnapshot().get(clusterIndex).size() == 0) {
+                logger.debug("Nothing to process for this cluster :: "+ clusterIndex);
+                return;
+            }
+            // @TODO :: ideally the diff entires should be cleared if non majority
             if (this.state.getLastLoadBalancerLogIndex().get(clusterIndex) > 0
                     && this.state.getLastLoadBalancerProcessed().get(clusterIndex) < this.state.getLastLoadBalancerLogIndex().get(clusterIndex)
                     && Collections.frequency(this.state.getLoadBalancerProcessStatus().get(clusterIndex), true)
                     != this.state.getLoadBalancerProcessStatus().get(clusterIndex).size()) {
+                logger.info("Rejecting entries due to non majority!");
                 lbRejectionRetries++;
+                if(lbRejectionRetries > MAX_REQUEST_RETRY) {
+                    this.state.getLoadBalancerEntries().get(clusterIndex).subList(
+                            Math.toIntExact(this.state.getLastLoadBalancerProcessed().get(clusterIndex)),
+                            Math.toIntExact(this.state.getLastLoadBalancerLogIndex().get(clusterIndex))).clear();
+                    this.state.getLastLoadBalancerLogIndex().set(clusterIndex, this.state.getLastLoadBalancerProcessed().get(clusterIndex) + 1);
+                }
+                return;
             } else {
                 this.state.getLastLoadBalancerProcessed().set(clusterIndex, this.state.getLastLoadBalancerLogIndex().get(clusterIndex));
                 this.state.getLoadBalancerEntries().get(clusterIndex).addAll(this.state.getLoadBalancerSnapshot().get(clusterIndex));
                 this.state.getLoadBalancerSnapshot().get(clusterIndex).clear();
-                this.state.getLastLoadBalancerLogIndex().set(clusterIndex, (long) (this.state.getLoadBalancerEntries().get(clusterIndex).size() -1));
+                this.state.getLoadBalancerProcessStatus().get(clusterIndex).clear();
+                if(this.state.getLoadBalancerEntries().get(clusterIndex).size() > 0) {
+                    this.state.getLastLoadBalancerLogIndex().set(clusterIndex, (long) (this.state.getLoadBalancerEntries().get(clusterIndex).size()));
+                }
                 lbRejectionRetries = 0;
             }
+
+            this.state.getLoadBalancerEntries().get(clusterIndex).stream().forEach(le -> {
+                    logger.debug(le.getTerm() + " :: " + le.getCommand().getKey() +" -> "+le.getCommand().getValue());
+            });
+            for (long i = this.state.getLastLoadBalancerProcessed().get(clusterIndex);
+                 i < this.state.getLastLoadBalancerLogIndex().get(clusterIndex); ++i) {
+                this.state.getLoadBalancerProcessStatus().get(clusterIndex).add(false);
+            }
             logger.debug("[initiateLBProcessorWrapper] Snapshot for cluster "+clusterIndex+" :: "+ this.state.getLoadBalancerSnapshot().get(clusterIndex));
-            logger.debug("[initiateLBProcessorWrapper] Entries for cluster "+clusterIndex+":: "+ this.state.getLoadBalancerEntries().get(clusterIndex));
+            logger.debug("[initiateLBProcessorWrapper] Entries for cluster "+clusterIndex+" :: "+ this.state.getLoadBalancerEntries().get(clusterIndex).size());
+            logger.debug("[initiateLBProcessorWrapper] Process Status for cluster "+clusterIndex+" :: "+ this.state.getLoadBalancerProcessStatus().get(clusterIndex));
 
-            this.state.getLoadBalancerEntries().get(clusterIndex).stream().forEach(le ->
-                    logger.debug(le.getTerm() + " :: " + le.getCommand().getKey() +" -> "+le.getCommand().getValue()));
-
-            // @TODO :: Need to send new fresh to-process entries
-//            this.subClusterList.get(clusterIndex).stream().forEach(serv -> {
-//                // @TODO :: new executor here!!
-//                // @TODO :: send only for cluster leader
-//                this.heartBeatExecutor.submit(() -> sendLoadBalancerEntries(serv, clusterIndex));
-//            });
             sendLoadBalancerEntries(this.subClusterList.get(clusterIndex), clusterIndex);
         } catch (Exception e) {
             logger.error("[initiateLBProcessorWrapper] excp :: "+ e);
+            e.printStackTrace();
         }
     }
 
     private void sendLoadBalancerEntries(Raft.ServerConnect cluster, int clusterIndex) {
 
-        logger.debug("[sendLoadBalancerEntries] : Sending request to " + " at "+System.currentTimeMillis());
+        logger.debug("[sendLoadBalancerEntries] : Sending request to " + cluster + " at "+System.currentTimeMillis());
+        logger.debug("[sendLoadBalancerEntries] : Last Processed :: "+this.state.getLastLoadBalancerProcessed().get(clusterIndex) +
+                " :: Last Log Index :" +this.state.getLastLoadBalancerLogIndex().get(clusterIndex));
         List<Raft.LogEntry> entryToSend = new ArrayList<>();
         Loadbalancer.LoadBalancerRequest.Builder requestBuilder = Loadbalancer.LoadBalancerRequest.newBuilder();
         try {
@@ -493,7 +544,7 @@ public class LoadBalancerServer {
                 return;
             }
             for (long i = this.state.getLastLoadBalancerProcessed().get(clusterIndex);
-                 i <= this.state.getLastLoadBalancerLogIndex().get(clusterIndex); ++i) {
+                 i < this.state.getLastLoadBalancerLogIndex().get(clusterIndex); ++i) {
                 if(this.state.getLoadBalancerEntries().get(clusterIndex).size() < i) {
                     logger.info("[sendLoadBalancerEntries] CLuster Entries for "+clusterIndex+" is small than index :: " +i);
                     continue;
@@ -501,7 +552,7 @@ public class LoadBalancerServer {
                 entryToSend.add(this.state.getLoadBalancerEntries().get(clusterIndex).get((int) i));
             }
             requestBuilder.addAllEntries(entryToSend);
-            logger.debug("[sendAppendEntries] Final Request :: "+ requestBuilder.toString());
+            logger.debug("[sendLoadBalancerEntries] Final Request :: "+ requestBuilder.toString());
         } catch (Exception e) {
             logger.debug("[sendLoadBalancerEntries] after response ex : " + e);
         }
@@ -516,16 +567,17 @@ public class LoadBalancerServer {
             Loadbalancer.LoadBalancerResponse response = loadBalancerRequestServiceStub.sendEntries(requestBuilder.build());
             int ind = 0;
             for (long i = this.state.getLastLoadBalancerProcessed().get(clusterIndex);
-                 i <= this.state.getLastLoadBalancerLogIndex().get(clusterIndex); ++i) {
+                 i < this.state.getLastLoadBalancerLogIndex().get(clusterIndex); ++i) {
                 logger.debug("[sendLoadBalancerEntries] Response :: "+response.getSuccess(ind));
-                this.state.getLoadBalancerProcessStatus().get(clusterIndex).set((int) i, response.getSuccess(ind));
+                this.state.getLoadBalancerProcessStatus().get(clusterIndex).set(Math.toIntExact(i - this.state.getLastLoadBalancerProcessed().get(clusterIndex)), response.getSuccess(ind));
             }
             logger.debug("[sendLoadBalancerEntries] Final status for cluster :: "+this.state.getLoadBalancerProcessStatus().get(clusterIndex));
         } catch (Exception e) {
             logger.debug("[sendLoadBalancerEntries] after response ex : " + e);
+            e.printStackTrace();
             for (long i = this.state.getLastLoadBalancerProcessed().get(clusterIndex);
-                 i <= this.state.getLastLoadBalancerLogIndex().get(clusterIndex); ++i) {
-                this.state.getLoadBalancerProcessStatus().get(clusterIndex).set((int) i, false);
+                 i < this.state.getLastLoadBalancerLogIndex().get(clusterIndex); ++i) {
+                this.state.getLoadBalancerProcessStatus().get(clusterIndex).set(Math.toIntExact(i - this.state.getLastLoadBalancerProcessed().get(clusterIndex)), false);
             }
         } finally {
             lock.unlock();
@@ -743,27 +795,25 @@ public class LoadBalancerServer {
                 logger.debug("[initiateLiveLinessProbesRPC] : Current node is not leader so cant send heartbeats");
                 return;
             }
-            logger.info("[initiateLiveLinessProbesRPC] subClusterList usage :: " + subClusterList );
-
             if(subClusterList == null || subClusterList.size() == 0){
-                logger.info("Bolimaga");
+                logger.debug("[initiateLiveLinessProbesRPC] Initializing subclusters!");
                 scaleUp();
                 return;
             }
             AtomicInteger count = new AtomicInteger();
-            logger.info("[initiateLiveLinessProbesRPC] subClusterList usage :: " +  subClusterList.size() );
-            logger.info("Sulemaga");
+            logger.debug("[initiateLiveLinessProbesRPC] subClusterList usage :: " +  subClusterList.size() );
             List<Callable<Double>> callableTasks= subClusterList.stream().map(sc -> {
-                logger.info("Inside ::" + sc + " :: "+count.get());
+                logger.debug("Inside ::" + sc + " :: "+count.get());
                 return loadBalancerLiveLinessService.something(sc, count.getAndIncrement());
             }).collect(Collectors.toList());
             List<Future<Double>> collect = liveLinessExecutor.invokeAll(callableTasks);
-            logger.info("[initiateLiveLinessProbesRPC] collect :" + collect + " : " + subClusterList);
+            logger.debug("[initiateLiveLinessProbesRPC] collect :" + collect + " : " + subClusterList);
             double sum = 0;
             for (int i = 0; i < collect.size(); i++) {
                 try {
                     double temp = collect.get(i).get();
-                    logger.info("[initiateLiveLinessProbesRPC] result :: "+temp);
+                    // @TODO handle return checks (i.e we are returning negative values and filer it)
+                    logger.debug("[initiateLiveLinessProbesRPC] result :: "+temp);
                     sum += temp;
                 } catch (InterruptedException e) {
                     logger.error("[initiateLiveLinessProbesRPC] Exception found in  :: ", e);
@@ -791,22 +841,21 @@ public class LoadBalancerServer {
         boolean isCreated = scaleResponse.getIsCreated();
         boolean inProgress = scaleResponse.getInProgress();
         List<Configuration.ServerDetails> subClustersList = scaleResponse.getSubClustersList();
-        logger.error("HEllo WOrld " + subClusterList + " : " + isCreated + " : " + inProgress) ;
+        logger.debug("[scaleUp] " + subClusterList + " : " + isCreated + " : " + inProgress) ;
         if (isCreated && inProgress) {
             //Assign Key Range to this or whatever
             lock.lock();
             try {
-                ConcurrentHashMap<Integer, List<Raft.ServerConnect>> clusterDetails = this.getState().getClusterDetails();
-                List<List<Raft.LogEntry>> loadBalancerEntries = this.getState().getLoadBalancerEntries();
-                List<List<Raft.LogEntry>> loadBalancerSnapshots = this.getState().getLoadBalancerSnapshot();
-                List<List<Boolean>> loadBalancerProcessStates = this.getState().getLoadBalancerProcessStatus();
+                // @TODO :: Check if there are any other places for these init
                 for (int i = 0; i < subClustersList.size(); i++) {
                     int x = subClusterList.size();
-                    loadBalancerEntries.add(new ArrayList<>());
-                    loadBalancerSnapshots.add(new ArrayList<>());
-                    loadBalancerProcessStates.add(new ArrayList<>());
+                    this.state.getLoadBalancerEntries().add(new ArrayList<>());
+                    this.state.getLoadBalancerSnapshot().add(new ArrayList<>());
+                    this.state.getLoadBalancerProcessStatus().add(new ArrayList<>());
+                    this.state.getLastLoadBalancerCommitIndex().add((long) -1);
+                    this.state.getLastLoadBalancerProcessed().add((long) -1);
+                    this.state.getLastLoadBalancerLogIndex().add(0L);
                     subClusterList.add(subClustersList.get(i).getServerConnectsList().get(0));
-
                 }
             } finally {
                 lock.unlock();

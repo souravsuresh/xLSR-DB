@@ -2,3 +2,4 @@ target*
 .idea*
 leveldb_*
 *.class
+*.DS_Store*

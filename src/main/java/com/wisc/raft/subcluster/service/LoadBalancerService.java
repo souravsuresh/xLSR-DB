@@ -1,20 +1,26 @@
-package com.wisc.raft.loadbalancer.service;
+package com.wisc.raft.subcluster.service;
 
+import com.wisc.raft.loadbalancer.RaftServer;
 import com.wisc.raft.loadbalancer.server.LoadBalancerServer;
 import com.wisc.raft.proto.LoadBalancerRequestServiceGrpc;
 import com.wisc.raft.proto.Loadbalancer;
+import com.wisc.raft.proto.Raft;
 import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import com.wisc.raft.subcluster.server.Server;
+
 
 public class LoadBalancerService extends LoadBalancerRequestServiceGrpc.LoadBalancerRequestServiceImplBase {
     private static final Logger logger = LoggerFactory.getLogger(LoadBalancerService.class);
 
-    LoadBalancerServer server;
+    Server server;
 
-    public LoadBalancerService(LoadBalancerServer server) {
+    public LoadBalancerService(Server server) {
         this.server = server;
     }
 
@@ -28,19 +34,18 @@ public class LoadBalancerService extends LoadBalancerRequestServiceGrpc.LoadBala
         try {
             this.server.getState().getSnapshot().addAll(request.getEntriesList());
             logger.info("[LoadBalancerSendEntries] Snapshot after adding entries :: "+ this.server.getState().getSnapshot());
-            AtomicInteger index = new AtomicInteger();
             request.getEntriesList().stream().forEach(ent -> {
-                responseBuilder.setSuccess(index.getAndIncrement(), true);
+                responseBuilder.addSuccess(true);
             });
         } catch (Exception ex) {
             logger.debug("Exception found :: "+ex);
-            AtomicInteger index = new AtomicInteger();
             request.getEntriesList().stream().forEach(ent -> {
-                responseBuilder.setSuccess(index.getAndIncrement(), false);
+                responseBuilder.addSuccess(false);
             });
         } finally {
             this.server.getLock().unlock();
         }
+        responseBuilder.build();
         responseObserver.onNext(responseBuilder.build());
         responseObserver.onCompleted();
     }

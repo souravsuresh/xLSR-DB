@@ -3,6 +3,7 @@ package com.wisc.raft.subcluster;
 import com.wisc.raft.proto.Raft;
 import com.wisc.raft.subcluster.server.Server;
 import com.wisc.raft.subcluster.service.Database;
+import com.wisc.raft.subcluster.service.LoadBalancerService;
 import com.wisc.raft.subcluster.service.RaftConsensusService;
 import com.wisc.raft.subcluster.service.ServerClientConnectionService;
 import com.wisc.raft.subcluster.storagestate.StorageState;
@@ -46,9 +47,14 @@ public class RaftServer {
         RaftConsensusService raftConsensusService = new RaftConsensusService(raftServer);
         logger.debug("[Sys Args] "+args.toString());
 
-        StorageState storageState = new StorageState("/Users/varun/Documents/DistFinalProject/", 30000000);
+        StorageState storageState = new StorageState(levelDB, 5000000);     // 5MB
         UtilizationService utilizationService = new UtilizationService(raftServer, storageState);
-        io.grpc.Server server = ServerBuilder.forPort(Integer.parseInt(args[1])).addService(raftConsensusService).addService(clientConnectionService).addService(utilizationService).build();
+        LoadBalancerService loadBalancerService = new LoadBalancerService(raftServer);
+        io.grpc.Server server = ServerBuilder.forPort(Integer.parseInt(args[1]))
+                .addService(raftConsensusService)
+                .addService(clientConnectionService)
+                .addService(utilizationService)
+                .addService(loadBalancerService).build();
 
         //Start the server
         raftServer.init();
