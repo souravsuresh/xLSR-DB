@@ -27,10 +27,10 @@ public class AutoScaleService extends AutoScaleGrpc.AutoScaleImplBase {
     AutoScaleService(){
         this.scanner = new Scanner(System.in);
         clusterDetails = new ArrayList<String>(Arrays.asList(
-                "0_locahost_8081_1_locahost_8082_2_locahost_8083",
-                "0_locahost_5081_1_locahost_5082_2_locahost_5083",
-                "0_locahost_6081_1_locahost_6082_2_locahost_6083",
-                "0_locahost_7081_1_locahost_7082_2_locahost_7083"));
+                "0_localhost_4081_1_localhost_4082_2_localhost_4083",
+                "0_localhost_5081_1_localhost_5082_2_localhost_5083",
+                "0_localhost_6081_1_localhost_6082_2_localhost_6083",
+                "0_localhost_7081_1_localhost_7082_2_loca;host_7083"));
     }
 
     private String getClusterDetails () {
@@ -52,7 +52,7 @@ public class AutoScaleService extends AutoScaleGrpc.AutoScaleImplBase {
                 String[] s = clusterString.split("_");
                 Configuration.ServerDetails.Builder serverDetailsBuilder = Configuration.ServerDetails.newBuilder();
 
-                for(int j=0;j<s.length-2;j=j+3){
+                for(int j=0;j<s.length-3;j=j+3){
                     //seperated id_hostname_port
                     Raft.Endpoint endpoint = Raft.Endpoint.newBuilder().setHost(s[j+1]).setPort(Integer.parseInt(s[j+2])).build();
                     Raft.ServerConnect serverConnect = Raft.ServerConnect.newBuilder().setEndpoint(endpoint).setServerId(Integer.parseInt(s[j])).build();

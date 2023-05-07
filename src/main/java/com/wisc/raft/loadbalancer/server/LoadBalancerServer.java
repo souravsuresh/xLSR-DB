@@ -21,6 +21,7 @@ import org.wisc.raft.proto.ServerClientConnectionGrpc;
 
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
@@ -46,7 +47,7 @@ public class LoadBalancerServer {
     private List<Raft.ServerConnect> cluster;
 
     private LoadBalancerLiveLinessService loadBalancerLiveLinessService;
-    private List<Cluster.ClusterConnect> subClusterList;
+    private List<Raft.ServerConnect> subClusterList;
 
     //Threading
     private ScheduledExecutorService electionExecutorService;
@@ -98,6 +99,8 @@ public class LoadBalancerServer {
         this.db = db;
         this.autoScalerPortNumber = autoScalerPortNumber;
         this.autoScalerHostName = autoScalerHostName;
+        this.subClusterList = new ArrayList<>();
+        this.loadBalancerLiveLinessService = new LoadBalancerLiveLinessService(new ConcurrentHashMap<>(), 3);
     }
 
     public void init() {
@@ -125,16 +128,21 @@ public class LoadBalancerServer {
 
         this.electionExecutor = new ThreadPoolExecutor(cluster.size(), cluster.size(), 60, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>());
         this.heartBeatExecutor = new ThreadPoolExecutor(cluster.size(), cluster.size(), 60, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>());
-        this.liveLinessExecutor = new ThreadPoolExecutor(subClusterList.size(), subClusterList.size(), 60, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>());
+        this.liveLinessExecutor = new ThreadPoolExecutor(10, 10, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>());
+
+
+
 
         electionExecutorService = Executors.newSingleThreadScheduledExecutor();
         liveLinessSchedulerService = Executors.newSingleThreadScheduledExecutor();
-
+        cleanUpVersionService = Executors.newSingleThreadScheduledExecutor();
         cleanUpVersionService.scheduleAtFixedRate(cleanUpVersionsRunnable,1,1,TimeUnit.HOURS);
-        liveLinessSchedulerService.scheduleAtFixedRate(sendLiveLinessProbesRunnable, 30, 30, TimeUnit.SECONDS);
-        electionScheduler = electionExecutorService.scheduleAtFixedRate(initiateElectionRPCRunnable, 1L, (long) (100 + random.nextDouble() * 100), TimeUnit.MILLISECONDS);
+        liveLinessSchedulerService.scheduleAtFixedRate(sendLiveLinessProbesRunnable, 0, 10, TimeUnit.SECONDS);
+        electionScheduler = electionExecutorService.scheduleAtFixedRate(initiateElectionRPCRunnable, 1, 2, TimeUnit.SECONDS);
+//        electionScheduler = electionExecutorService.scheduleAtFixedRate(initiateElectionRPCRunnable, 1L, (long) (100 + random.nextDouble() * 100), TimeUnit.MILLISECONDS);
         heartbeatExecutorService = Executors.newSingleThreadScheduledExecutor();
-        heartBeatScheduler = heartbeatExecutorService.scheduleAtFixedRate(initiateHeartbeatRPCRunnable, 1500, 80, TimeUnit.MILLISECONDS);
+        heartBeatScheduler = heartbeatExecutorService.scheduleAtFixedRate(initiateHeartbeatRPCRunnable, 1, 1, TimeUnit.SECONDS);
+//        heartBeatScheduler = heartbeatExecutorService.scheduleAtFixedRate(initiateHeartbeatRPCRunnable, 1500, 80, TimeUnit.MILLISECONDS);
     }
 
 
@@ -233,9 +241,10 @@ public class LoadBalancerServer {
 
                 logger.debug("[initiateElectionRPC]  Already a leader! So not participating in Election!");
                 //@CHECK :: UNCOMMENT THIS TO TEST APPEND ENTRIES SIMULATING CLIENT
-                for(int i = 0 ;i < 1; i++){
-                    this.state.getSnapshot().add(Raft.LogEntry.newBuilder().setCommand(Raft.Command.newBuilder().setValue(Integer.toString(random.nextInt(10))).setKey(Integer.toString(random.nextInt(10))).build()).setTerm(this.state.getCurrentTerm()).setIndex("Bolimaga").build());
-                }
+//                for(int i = 0 ;i < 1; i++){
+//                    this.state.getSnapshot().add(Raft.LogEntry.newBuilder().setCommand(Raft.Command.newBuilder().setValue(Integer.toString(random.nextInt(10))).setKey(Integer.toString(random.nextInt(10))).build()).setTerm(this.state.getCurrentTerm()).setIndex("Bolimaga").build());
+//                }
+//                return;
                 return;
             }
             if (!Objects.isNull(this.state.getVotedFor()) && this.state.getNodeType().equals(Role.FOLLOWER)) {
@@ -469,9 +478,9 @@ public class LoadBalancerServer {
         }
     }
 
-    private void sendLoadBalancerEntries(Cluster.ClusterConnect cluster, int clusterIndex) {
+    private void sendLoadBalancerEntries(Raft.ServerConnect cluster, int clusterIndex) {
 
-        logger.debug("[sendLoadBalancerEntries] : Sending request to " + cluster.getClusterId() + " at "+System.currentTimeMillis());
+        logger.debug("[sendLoadBalancerEntries] : Sending request to " + " at "+System.currentTimeMillis());
         List<Raft.LogEntry> entryToSend = new ArrayList<>();
         Loadbalancer.LoadBalancerRequest.Builder requestBuilder = Loadbalancer.LoadBalancerRequest.newBuilder();
         try {
@@ -497,8 +506,8 @@ public class LoadBalancerServer {
             logger.debug("[sendLoadBalancerEntries] after response ex : " + e);
         }
 
-        logger.debug("[sendLoadBalancerEntries] : before call : " + cluster.getClusterId());
-        Cluster.ClusterEndpoint endpoint = cluster.getClusterEndpoint();
+        logger.debug("[sendLoadBalancerEntries] : before call : " );
+        Raft.Endpoint endpoint = cluster.getEndpoint();
         ManagedChannel channel = ManagedChannelBuilder.forAddress(endpoint.getHost(), endpoint.getPort()).usePlaintext().build();
 
         lock.lock();
@@ -720,62 +729,88 @@ public class LoadBalancerServer {
 //    }
 
     private void initiateCleanUpVersions(){
+        if (this.state.getNodeType() != Role.LEADER) {
+            logger.debug("[initiateCleanUpVersions] : Current node is not leader so cant send heartbeats");
+            return;
+        }
         db.cleanUp();
     }
 
     private void initiateLiveLinessProbesRPC() {
-        try {
-            List<Future<Double>> collect = subClusterList.stream().map(sc -> {
-                        return liveLinessExecutor.submit(() -> loadBalancerLiveLinessService.checkLiveliness(sc));
-                    }
-            ).collect(Collectors.toList());
 
+        try {
+            if (this.state.getNodeType() != Role.LEADER) {
+                logger.debug("[initiateLiveLinessProbesRPC] : Current node is not leader so cant send heartbeats");
+                return;
+            }
+            logger.info("[initiateLiveLinessProbesRPC] subClusterList usage :: " + subClusterList );
+
+            if(subClusterList == null || subClusterList.size() == 0){
+                logger.info("Bolimaga");
+                scaleUp();
+                return;
+            }
+            AtomicInteger count = new AtomicInteger();
+            logger.info("[initiateLiveLinessProbesRPC] subClusterList usage :: " +  subClusterList.size() );
+            logger.info("Sulemaga");
+            List<Callable<Double>> callableTasks= subClusterList.stream().map(sc -> {
+                logger.info("Inside ::" + sc + " :: "+count.get());
+                return loadBalancerLiveLinessService.something(sc, count.getAndIncrement());
+            }).collect(Collectors.toList());
+            List<Future<Double>> collect = liveLinessExecutor.invokeAll(callableTasks);
+            logger.info("[initiateLiveLinessProbesRPC] collect :" + collect + " : " + subClusterList);
             double sum = 0;
             for (int i = 0; i < collect.size(); i++) {
                 try {
-                    sum += collect.get(i).get();
+                    double temp = collect.get(i).get();
+                    logger.info("[initiateLiveLinessProbesRPC] result :: "+temp);
+                    sum += temp;
                 } catch (InterruptedException e) {
                     logger.error("[initiateLiveLinessProbesRPC] Exception found in  :: ", e);
                 } catch (ExecutionException e) {
                     logger.error("[initiateLiveLinessProbesRPC] Exception found in  :: ", e);
                 }
             }
-
+            logger.info("[initiateLiveLinessProbesRPC] CLuster usage :: " +  sum / subClusterList.size() );
             if (sum / subClusterList.size() > 80) {
-                Configuration.ScaleRequest scaleRequest = Configuration.ScaleRequest.newBuilder().setAbsoluteMajority(2).setClusterSize(1).build();
-                ManagedChannel channel = ManagedChannelBuilder.forAddress(autoScalerHostName, autoScalerPortNumber).usePlaintext().build();
-                AutoScaleGrpc.AutoScaleBlockingStub autoScaleBlockingStub = AutoScaleGrpc.newBlockingStub(channel);
-                Configuration.ScaleResponse scaleResponse = autoScaleBlockingStub.requestUpScale(scaleRequest);
-//                Cluster.ClusterConnect clusterConnect = scaleResponse.getClusterDetails();
-                //Cluster.ClusterConnect clusterConnect = scaleResponse.getClusterDetails();
-                boolean isCreated = scaleResponse.getIsCreated();
-                boolean inProgress = scaleResponse.getInProgress();
-                List<Configuration.ServerDetails> subClustersList = scaleResponse.getSubClustersList();
-                if (isCreated && inProgress) {
-                    //Assign Key Range to this or whatever
-                    lock.lock();
-                    try {
-                        ConcurrentHashMap<Integer, List<Raft.ServerConnect>> clusterDetails = this.getState().getClusterDetails();
-                        List<List<Raft.LogEntry>> loadBalancerEntries = this.getState().getLoadBalancerEntries();
-                        List<List<Raft.LogEntry>> loadBalancerSnapshots = this.getState().getLoadBalancerSnapshot();
-                        List<List<Boolean>> loadBalancerProcessStates = this.getState().getLoadBalancerProcessStatus();
-                        for (int i = 0; i < subClustersList.size(); i++) {
-                            int x = clusterDetails.size();
-                            clusterDetails.put(x, subClustersList.get(i).getServerConnectsList());
-                            loadBalancerEntries.add(new ArrayList<>());
-                            loadBalancerSnapshots.add(new ArrayList<>());
-                            loadBalancerProcessStates.add(new ArrayList<>());
-                        }
-                    } finally {
-                        lock.unlock();
-                    }
-                }
-            } else {
-                logger.debug("[initiateLiveLinessProbesRPC] Cluster usage ", sum / subClusterList.size());
+                scaleUp();
             }
         }
         catch(Exception e){
             logger.error("[initiateLiveLinessProbesRPC] Found an exception, please check", e);
+        }
+    }
+
+    private void scaleUp() {
+        Configuration.ScaleRequest scaleRequest = Configuration.ScaleRequest.newBuilder().setAbsoluteMajority(2).setClusterSize(1).build();
+        ManagedChannel channel = ManagedChannelBuilder.forAddress(autoScalerHostName, autoScalerPortNumber).usePlaintext().build();
+        AutoScaleGrpc.AutoScaleBlockingStub autoScaleBlockingStub = AutoScaleGrpc.newBlockingStub(channel);
+        Configuration.ScaleResponse scaleResponse = autoScaleBlockingStub.requestUpScale(scaleRequest);
+//                Cluster.ClusterConnect clusterConnect = scaleResponse.getClusterDetails();
+        //Cluster.ClusterConnect clusterConnect = scaleResponse.getClusterDetails();
+        boolean isCreated = scaleResponse.getIsCreated();
+        boolean inProgress = scaleResponse.getInProgress();
+        List<Configuration.ServerDetails> subClustersList = scaleResponse.getSubClustersList();
+        logger.error("HEllo WOrld " + subClusterList + " : " + isCreated + " : " + inProgress) ;
+        if (isCreated && inProgress) {
+            //Assign Key Range to this or whatever
+            lock.lock();
+            try {
+                ConcurrentHashMap<Integer, List<Raft.ServerConnect>> clusterDetails = this.getState().getClusterDetails();
+                List<List<Raft.LogEntry>> loadBalancerEntries = this.getState().getLoadBalancerEntries();
+                List<List<Raft.LogEntry>> loadBalancerSnapshots = this.getState().getLoadBalancerSnapshot();
+                List<List<Boolean>> loadBalancerProcessStates = this.getState().getLoadBalancerProcessStatus();
+                for (int i = 0; i < subClustersList.size(); i++) {
+                    int x = subClusterList.size();
+                    loadBalancerEntries.add(new ArrayList<>());
+                    loadBalancerSnapshots.add(new ArrayList<>());
+                    loadBalancerProcessStates.add(new ArrayList<>());
+                    subClusterList.add(subClustersList.get(i).getServerConnectsList().get(0));
+
+                }
+            } finally {
+                lock.unlock();
+            }
         }
     }
 

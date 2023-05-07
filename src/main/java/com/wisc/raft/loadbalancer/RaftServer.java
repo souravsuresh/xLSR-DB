@@ -1,10 +1,14 @@
 package com.wisc.raft.loadbalancer;
 
+import com.wisc.raft.proto.AutoScaleGrpc;
+import com.wisc.raft.proto.Configuration;
 import com.wisc.raft.proto.Raft;
 import com.wisc.raft.loadbalancer.server.LoadBalancerServer;
 import com.wisc.raft.loadbalancer.service.LoadBalancerDatabase;
 import com.wisc.raft.loadbalancer.service.RaftConsensusService;
 
+import io.grpc.ManagedChannel;
+import io.grpc.ManagedChannelBuilder;
 import io.grpc.ServerBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,12 +43,16 @@ public class RaftServer {
             Raft.ServerConnect server = Raft.ServerConnect.newBuilder().setServerId(serverId).setEndpoint(endpoint).build();
             serverList.add(server);
         }
-        LoadBalancerServer raftServer = new LoadBalancerServer(args[0], database,  10000, "localhost" );
+        LoadBalancerServer raftServer = new LoadBalancerServer(args[0], database,  9999, "localhost" );
         raftServer.setCluster(serverList);
 //       ServerClientConnectionService clientConnectionService = new ServerClientConnectionService(raftServer);
         RaftConsensusService raftConsensusService = new RaftConsensusService(raftServer);
         logger.debug("[Sys Args] "+args.toString());
         io.grpc.Server server = ServerBuilder.forPort(Integer.parseInt(args[1])).addService(raftConsensusService).addService(raftConsensusService).build();
+//        Configuration.ScaleRequest scaleRequest = Configuration.ScaleRequest.newBuilder().setAbsoluteMajority(2).setClusterSize(1).build();
+//        ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", 9999).usePlaintext().build();
+//        AutoScaleGrpc.AutoScaleBlockingStub autoScaleBlockingStub = AutoScaleGrpc.newBlockingStub(channel);
+//        Configuration.ScaleResponse scaleResponse = autoScaleBlockingStub.requestUpScale(scaleRequest);
 
         //Start the server
         raftServer.init();

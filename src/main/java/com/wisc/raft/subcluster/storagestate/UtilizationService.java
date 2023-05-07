@@ -23,9 +23,9 @@ public class UtilizationService extends UtilizationServiceGrpc.UtilizationServic
     public void getUtilization(Raft.UtilizationRequest request, StreamObserver<Raft.UtilizationResponse> responseObserver) {
         logger.debug("[UtilizationService] Inside getGetUtilization Service Call for :: " + server.getState().getNodeId() + " and requested" +
                 " leader is : " + request.getLeaderId());
-        if (server.getState().getLeaderId().equals(request.getLeaderId())) {
+        if (server.getState().getVotedFor().equals(request.getLeaderId())) {
             Raft.UtilizationResponse.Builder responseBuilder = Raft.UtilizationResponse.newBuilder()
-                    .setLeaderId(server.getState().getLeaderId());
+                    .setLeaderId(server.getState().getVotedFor());
             float num = storageState.getUtilization();
             if (num == -1) {
                 logger.debug("[UtilizationService] Error occurred during calculation");
