@@ -698,6 +698,9 @@ public class LoadBalancerServer {
      * @return
      */
     public long preCall(Client.Request request) {
+        logger.debug("[preCall] Cache entries :: "+db.getCacheEntry());
+        logger.debug("[preCall] Log Entries :: "+this.state.getLoadBalancerEntries().get(0));
+        logger.debug("[preCall] Snapshot :: "+this.state.getLoadBalancerSnapshot().get(0));
         String key = String.valueOf(request.getKey());
         if(subClusterList.isEmpty()){
             log.error("[preCall] wait for your turn you little shit");
@@ -729,7 +732,7 @@ public class LoadBalancerServer {
             String value = String.valueOf(request.getValue());
             Pair<Integer, Integer> integerIntegerPair = db.getCacheEntry().get(key);
             Pair<Integer,Integer> pair = new Pair<>(integerIntegerPair.getKey()+1, integerIntegerPair.getValue());
-
+            db.getCacheEntry().put(key, pair);
             int clusterId = pair.getValue();
             if (subClusterList.size() > clusterId) {
                 int versionNumber = pair.getKey();
