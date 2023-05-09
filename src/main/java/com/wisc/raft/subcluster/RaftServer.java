@@ -5,7 +5,6 @@ import com.wisc.raft.subcluster.server.Server;
 import com.wisc.raft.subcluster.service.Database;
 import com.wisc.raft.subcluster.service.LoadBalancerService;
 import com.wisc.raft.subcluster.service.RaftConsensusService;
-import com.wisc.raft.subcluster.service.ServerClientConnectionService;
 import com.wisc.raft.subcluster.storagestate.StorageState;
 import com.wisc.raft.subcluster.storagestate.UtilizationService;
 import io.grpc.ServerBuilder;
@@ -43,7 +42,7 @@ public class RaftServer {
         }
         Server raftServer = new Server(args[0], database);
         raftServer.setCluster(serverList);
-        ServerClientConnectionService clientConnectionService = new ServerClientConnectionService(raftServer);
+        //ServerClientConnectionService clientConnectionService = new ServerClientConnectionService(raftServer);
         RaftConsensusService raftConsensusService = new RaftConsensusService(raftServer);
         logger.debug("[Sys Args] "+args.toString());
 
@@ -52,7 +51,6 @@ public class RaftServer {
         LoadBalancerService loadBalancerService = new LoadBalancerService(raftServer);
         io.grpc.Server server = ServerBuilder.forPort(Integer.parseInt(args[1]))
                 .addService(raftConsensusService)
-                .addService(clientConnectionService)
                 .addService(utilizationService)
                 .addService(loadBalancerService).build();
 

@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -72,7 +73,9 @@ public class LoadBalancerDatabase {
             return -1;
         }
         try {
-            byte[] object = serialize(logEntry);
+            List<Pair<Integer, Integer>> listOfVersion = readPair(logEntry.getCommand().getKey());
+            listOfVersion.add(new Pair<>(logEntry.getCommand().getVersion(), logEntry.getClusterId()));
+            byte[] object = serialize(listOfVersion);
             //
             cacheEntry.remove("key");
             if (Objects.isNull(keyBytes)) {
@@ -88,6 +91,35 @@ public class LoadBalancerDatabase {
     }
 
 
+    private List<Pair<Integer, Integer>> readPair(String key) {
+        ReadLBObject readLBObject = new ReadLBObject();
+        byte[] keyBytes = key.getBytes();
+        if (Objects.isNull(keyBytes)) {
+            logger.error("[LbDatabase] Object not retrieved");
+            readLBObject.setReturnVal(-1);
+            return new ArrayList<>();
+        }
+        byte[] bytes = db.get(keyBytes);
+        if(bytes == null){
+            logger.error("[LbDatabase] No value exists " );
+            readLBObject.setReturnVal(2);
+            readLBObject.setVersionNumber(0);
+            return new ArrayList<>();
+        }
+        try {
+            List<Pair<Integer, Integer>> listOfVersion = deserialize(bytes);
+            if(listOfVersion.isEmpty()){
+                readLBObject.setReturnVal(2);
+                readLBObject.setVersionNumber(0);
+                return new ArrayList<>();
+            }
+            return listOfVersion;
+        } catch (Exception e) {
+            logger.error("[LbDatabase] Exception while deserializing : " + e);
+        }
+        readLBObject.setReturnVal(-3);
+        return new ArrayList<>();
+    }
 
     //Returns ClusterID
     public ReadLBObject read(String key) {
@@ -101,15 +133,16 @@ public class LoadBalancerDatabase {
         byte[] bytes = db.get(keyBytes);
         if(bytes == null){
             logger.error("[LbDatabase] No value exists " );
-            readLBObject.setReturnVal(-2);
-            readLBObject.setVersionNumber(1);
+            readLBObject.setReturnVal(2);
+            readLBObject.setVersionNumber(0);
             return readLBObject;
         }
         try {
             List<Pair<Integer, Integer>> listOfVersion = deserialize(bytes);
             if(listOfVersion.isEmpty()){
-                readLBObject.setReturnVal(-2);
-                readLBObject.setVersionNumber(1);
+                readLBObject.setReturnVal(2);
+                readLBObject.setVersionNumber(0);
+
                 return readLBObject;
             }
             if(listOfVersion.size() > keep){

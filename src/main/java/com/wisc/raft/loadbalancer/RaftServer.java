@@ -1,5 +1,7 @@
 package com.wisc.raft.loadbalancer;
 
+import com.wisc.raft.loadbalancer.service.LoadBalancerLiveLinessService;
+import com.wisc.raft.loadbalancer.service.ServerClientConnectionService;
 import com.wisc.raft.proto.AutoScaleGrpc;
 import com.wisc.raft.proto.Configuration;
 import com.wisc.raft.proto.Raft;
@@ -17,6 +19,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class RaftServer {
 
@@ -45,10 +48,12 @@ public class RaftServer {
         }
         LoadBalancerServer raftServer = new LoadBalancerServer(args[0], database,  9999, "localhost" );
         raftServer.setCluster(serverList);
-//       ServerClientConnectionService clientConnectionService = new ServerClientConnectionService(raftServer);
+        ServerClientConnectionService clientConnectionService = new ServerClientConnectionService(raftServer);
         RaftConsensusService raftConsensusService = new RaftConsensusService(raftServer);
         logger.debug("[Sys Args] "+args.toString());
-        io.grpc.Server server = ServerBuilder.forPort(Integer.parseInt(args[1])).addService(raftConsensusService).addService(raftConsensusService).build();
+        io.grpc.Server server = ServerBuilder.forPort(Integer.parseInt(args[1]))
+                                .addService(raftConsensusService)
+                                .addService(clientConnectionService).build();
 //        Configuration.ScaleRequest scaleRequest = Configuration.ScaleRequest.newBuilder().setAbsoluteMajority(2).setClusterSize(1).build();
 //        ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", 9999).usePlaintext().build();
 //        AutoScaleGrpc.AutoScaleBlockingStub autoScaleBlockingStub = AutoScaleGrpc.newBlockingStub(channel);

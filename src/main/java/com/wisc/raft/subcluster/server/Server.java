@@ -1,8 +1,8 @@
 package com.wisc.raft.subcluster.server;
 
-import com.wisc.raft.subcluster.constants.Role;
 import com.wisc.raft.proto.Raft;
 import com.wisc.raft.proto.RaftServiceGrpc;
+import com.wisc.raft.subcluster.constants.Role;
 import com.wisc.raft.subcluster.service.Database;
 import com.wisc.raft.subcluster.service.RaftConsensusService;
 import com.wisc.raft.subcluster.state.NodeState;
@@ -111,7 +111,7 @@ public class Server {
         commitScheduler = commitSchedulerService.scheduleAtFixedRate(initiateElectionExecutorRunnable, 2L, 15, TimeUnit.SECONDS);
         electionScheduler = electionExecutorService.scheduleAtFixedRate(initiateElectionRPCRunnable, 1L, 4, TimeUnit.SECONDS);
         heartbeatExecutorService = Executors.newSingleThreadScheduledExecutor();
-        heartBeatScheduler = heartbeatExecutorService.scheduleAtFixedRate(initiateHeartbeatRPCRunnable, 1L, 2, TimeUnit.SECONDS);
+        heartBeatScheduler = heartbeatExecutorService.scheduleAtFixedRate(initiateHeartbeatRPCRunnable, 1L, 1, TimeUnit.SECONDS);
     }
 
     private void initiateReplyScheduleRPC(){
@@ -477,25 +477,21 @@ public class Server {
         }
     }
 
-    public long getValue(long key) {
-        long value = db.read(Long.parseLong(String.valueOf(key)));
+    public String getValue(String key) {
+        String value = db.read(String.valueOf(key)).get();
         return value;
     }
 
-    public int putValue(long key, long val, String clientKey) {
+    public int putValue(Raft.LogEntry entry) {
         lock.lock();
         try {
             int numOfEntries = 1;
             //TODO should we pull the leader check code there ?
             //TODO add cmd type from params and make this into a loop
-            Raft.Command command = Raft.Command.newBuilder().setCommandType("Something").setKey(String.valueOf(key)).setValue(String.valueOf(val)).build();
             String requestId = String.valueOf(UUID.randomUUID());
-            Raft.LogEntry logEntry = Raft.LogEntry.newBuilder().setRequestId(requestId)
-                                            .setCommand(command)
-                                                .setIndex(String.valueOf(this.state.getEntries().size()))
-                                                .setTerm(this.state.getCurrentTerm()).build();
+            Raft.LogEntry logEntry = entry;
 
-            this.persistentStore.put(requestId, new Pair<>(clientKey,null));
+            //this.persistentStore.put(requestId, new Pair<>(clientKey,null));
             this.state.getSnapshot().add(logEntry);
             logger.debug("Created request with id :: "+ requestId);
             return 0;

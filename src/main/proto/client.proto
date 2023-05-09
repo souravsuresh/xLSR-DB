@@ -7,8 +7,7 @@ import "google/protobuf/empty.proto";
 //   rpc GetFeature(SampleRequest) returns (SampleResponse);
 // }
 service ServerClientConnection{
-  rpc Get(Request) returns (Response);
-  rpc Put(Request) returns (Response);
+  rpc Interact(Request) returns (Response);
   rpc GetLeader(MetaDataRequest) returns(MetaDataResponse);
   rpc talkBack(StatusUpdate) returns(google.protobuf.Empty);
 };

@@ -5,17 +5,30 @@ import "raft.proto";
 
 service LoadBalancerRequestService{
   rpc sendEntries(LoadBalancerRequest) returns (LoadBalancerResponse);
+  rpc getEntries(DataReadRequestObject) returns (DataReadResponseObject);
 };
 
 message LoadBalancerRequest{
-  repeated LogEntry entries = 6;
+  repeated LogEntry entries = 1;
   optional string dataClusterId = 3;
 }
 
 message LoadBalancerResponse {
   repeated bool success = 1;
+  string timestamp = 2;
 }
 
 message DataRequestObject{
   string command=1;
+}
+
+message DataReadRequestObject {
+  string key = 1;
+  sint32 version = 2;
+  string timestamp = 3;
+}
+
+message DataReadResponseObject {
+  string value = 1;
+  uint32 returnCode = 2;
 }

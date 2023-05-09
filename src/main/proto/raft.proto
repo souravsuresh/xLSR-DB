@@ -40,6 +40,8 @@ message Command {
   optional string commandType = 1;
   optional string key = 2;
   optional string value = 3;
+  optional sint32 version = 4;
+
 };
 
 message LogEntry {
@@ -47,8 +49,9 @@ message LogEntry {
   optional string index = 2;
   optional Command command = 3;
   optional string requestId = 4;
-
+  optional sint32 clusterId = 5;
 };
+
 
 message AppendEntriesRequest {
   optional string leaderId = 1;

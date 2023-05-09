@@ -1,7 +1,6 @@
 package com.wisc.raft.subcluster.service;
 
 import com.wisc.raft.proto.Raft;
-import javafx.util.Pair;
 import lombok.Getter;
 import lombok.Setter;
 import org.iq80.leveldb.DB;
@@ -13,6 +12,7 @@ import java.io.*;
 import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 import static org.iq80.leveldb.impl.Iq80DBFactory.factory;
 
@@ -57,8 +57,8 @@ public class Database {
     }
 
     public int commit(Raft.LogEntry logEntry) {
-        long key = Long.parseLong(logEntry.getCommand().getKey());
-        byte[] keyBytes = ByteBuffer.allocate(Long.BYTES).putLong(key).array();
+        String key = logEntry.getCommand().getKey() + "_" + logEntry.getCommand().getVersion();
+        byte[] keyBytes = key.getBytes();
         if (Objects.isNull(keyBytes)) {
             logger.error("[Database] Key cannot not be serialized");
             return -1;
@@ -77,24 +77,24 @@ public class Database {
         return 0;
     }
 
-    public long read(long key) {
-        byte[] keyBytes = ByteBuffer.allocate(Long.BYTES).putLong(key).array();
+    public Optional<String> read(String key) {
+        byte[] keyBytes = key.getBytes();
         if (Objects.isNull(keyBytes)) {
             logger.error("[Database] Object not retrieved");
-            return -1;
+            return Optional.empty();
         }
         byte[] bytes = db.get(keyBytes);
         try {
             Raft.LogEntry logEntry = deserialize(bytes);
-            return Long.parseLong(logEntry.getCommand().getValue());
+            return Optional.of(logEntry.getCommand().getValue());
         } catch (Exception e) {
             logger.error("[Database] Exception while deserializing : " + e);
         }
-        return 0;
+        return Optional.empty();
     }
 
-    public boolean remove(long key){
-        byte[] keyBytes = ByteBuffer.allocate(Long.BYTES).putLong(key).array();
+    public boolean remove(String key){
+        byte[] keyBytes = key.getBytes();
         if (Objects.isNull(keyBytes)) {
             logger.error("[Database] Object not available for delete");
             return false;

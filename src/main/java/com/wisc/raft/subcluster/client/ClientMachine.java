@@ -70,9 +70,9 @@ public class ClientMachine {
         logger.info("Starting the requests at :: "+ System.currentTimeMillis());
         for (int i = 0; i < numberOfAppends; i++) {
             //TODO put to const
-            Client.Request request = Client.Request.newBuilder().setCommandType("PUT").setKey(key).setValue(val).setEndpoint(endpoint).build();
+            Client.Request request = Client.Request.newBuilder().setCommandType("WRITE").setKey(key).setValue(val).setEndpoint(endpoint).build();
             try {
-                Client.Response response = serverClientConnectionBlockingStubLeader.put(request);
+                Client.Response response = serverClientConnectionBlockingStubLeader.interact(request);
                 if (response.getSuccess()) {
 
                     logger.debug("Accepted : " + key);

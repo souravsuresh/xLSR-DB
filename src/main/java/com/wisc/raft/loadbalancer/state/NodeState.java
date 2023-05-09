@@ -6,14 +6,18 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.PriorityBlockingQueue;
 
 @Getter
 @Setter
 public class NodeState {
 
+    private ConcurrentSkipListMap<Integer,Double> utilizationMap;
     private String nodeId;
     private long currentTerm;
     private String votedFor;
@@ -26,6 +30,8 @@ public class NodeState {
     private List<List<Raft.LogEntry>> loadBalancerEntries;
     private List<List<Raft.LogEntry>> loadBalancerSnapshot;
     private List<List<Boolean>> loadBalancerProcessStatus;      // status of that key within the process list
+
+
 
 
     private Role nodeType;
@@ -59,6 +65,7 @@ public class NodeState {
         return clusterId;
     }
 
+
     public void setClusterId(int clusterId) {
         this.clusterId = clusterId;
     }
@@ -90,5 +97,20 @@ public class NodeState {
         this.loadBalancerEntries = new ArrayList<>();
         this.loadBalancerSnapshot = new ArrayList<>();
         this.loadBalancerProcessStatus = new ArrayList<>();
+        this.utilizationMap = new ConcurrentSkipListMap<>(new Comparator<Integer>() {
+            @Override
+            public int compare(Integer o1, Integer o2) {
+                return utilizationMap.get(o1).compareTo(utilizationMap.get(o2));
+            }
+        });
+
+    }
+
+    public ConcurrentSkipListMap<Integer, Double> getUtilizationMap() {
+        return utilizationMap;
+    }
+
+    public void setUtilizationMap(ConcurrentSkipListMap<Integer, Double> utilizationMap) {
+        this.utilizationMap = utilizationMap;
     }
 }

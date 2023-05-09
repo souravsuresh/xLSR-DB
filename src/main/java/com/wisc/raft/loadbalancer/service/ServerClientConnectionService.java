@@ -1,8 +1,8 @@
-package com.wisc.raft.subcluster.service;
+package com.wisc.raft.loadbalancer.service;
 
-import com.wisc.raft.subcluster.constants.Role;
+import com.wisc.raft.loadbalancer.server.LoadBalancerServer;
 import com.wisc.raft.proto.Raft;
-import com.wisc.raft.subcluster.server.Server;
+import com.wisc.raft.subcluster.constants.Role;
 import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,8 +16,8 @@ public class ServerClientConnectionService extends ServerClientConnectionGrpc.Se
 
     private static final Logger logger = LoggerFactory.getLogger(ServerClientConnectionService.class);
 
-    Server server;
-    public ServerClientConnectionService(Server server){
+    LoadBalancerServer server;
+    public ServerClientConnectionService(LoadBalancerServer server){
         this.server = server;
     }
 
@@ -64,46 +64,21 @@ public class ServerClientConnectionService extends ServerClientConnectionGrpc.Se
 
     }
 
-    @Override
-    public void get(Client.Request request, StreamObserver<Client.Response> res){
-        long key = request.getKey();
-        String commandType = request.getCommandType();
-        Client.Response response = Client.Response.newBuilder().setSuccess(false).setValue(-1).build();
-        if (this.server.getState().getNodeType() != Role.LEADER) {
-            logger.warn("Cant perform action as this is not leader!!");
-            res.onNext(response);
-            res.onCompleted();
-        }
-
-        else if(commandType.equals("GET")){
-            long ret = this.server.getValue(key);
-            if(ret != -1){
-                response = Client.Response.newBuilder().setSuccess(true).setValue(ret).build();
-            }
-        }
-        res.onNext(response);
-        res.onCompleted();
-    }
-
-
     //@TODO : Probably should Long instead of long
     @Override
-    public void put(Client.Request request, StreamObserver<Client.Response> res){
-        long key = request.getKey();
-        long val = request.getValue();
+    public void interact(Client.Request request, StreamObserver<Client.Response> res){
         String commandType = request.getCommandType();
         Client.Response response = Client.Response.newBuilder().setSuccess(false).setValue(-1).build();
-        if (this.server.getState().getNodeType() != Role.LEADER) {
+        if (!this.server.getState().getNodeType().equals(Role.LEADER)) {
             logger.warn("Cant perform action as this is not leader!!");
             res.onNext(response);
             res.onCompleted();
         }
 
-        if(commandType.equals("PUT")){
-            logger.debug("[put] Can perform ");
-            String clientKey = request.getEndpoint().getHost() + ":" + request.getEndpoint().getPort();
-            int ret = server.putValue(key, val, clientKey);
-            if(ret != -1){
+        if(commandType.equals("WRITE") || commandType.equals("READ")){
+            logger.debug("[interact] Can perform either operation ");
+            long ret = server.preCall(request);
+            if(ret > 0){
                 response = Client.Response.newBuilder().setSuccess(true).setValue(ret).build();
             }
         }

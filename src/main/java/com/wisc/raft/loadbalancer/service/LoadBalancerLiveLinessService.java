@@ -7,6 +7,7 @@ import com.wisc.raft.proto.Raft;
 import com.wisc.raft.proto.UtilizationServiceGrpc;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
+import javafx.util.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,8 +32,8 @@ public class LoadBalancerLiveLinessService {
 
     int retryLimit;
 
-    public Callable<Double> something(Raft.ServerConnect  clusterConnect, int clusterId) {
-        Callable<Double> callableTask = () -> checkLiveliness(clusterConnect, clusterId);
+    public Callable<Pair<Integer, Double>> wrapperCallBack(Raft.ServerConnect  clusterConnect, int clusterId) {
+        Callable<Pair<Integer, Double>> callableTask = () -> new Pair<>(clusterId,checkLiveliness(clusterConnect, clusterId));
         return callableTask;
     }
 
@@ -93,6 +94,7 @@ public class LoadBalancerLiveLinessService {
                         return prevUtilization.get(clusterId);
                     }
                     else{
+
                         return 100;
                     }
 
