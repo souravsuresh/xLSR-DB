@@ -97,7 +97,12 @@ public class NodeState {
         this.loadBalancerEntries = new ArrayList<>();
         this.loadBalancerSnapshot = new ArrayList<>();
         this.loadBalancerProcessStatus = new ArrayList<>();
-        this.utilizationMap = new ConcurrentSkipListMap<>();
+        this.utilizationMap = new ConcurrentSkipListMap<>(new Comparator<Integer>() {
+            @Override
+            public int compare(Integer o1, Integer o2) {
+                return (int) (utilizationMap.get(o1) - utilizationMap.get(o2));
+            }
+        });
 
     }
 

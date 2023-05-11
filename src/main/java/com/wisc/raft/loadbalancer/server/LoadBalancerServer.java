@@ -793,6 +793,7 @@ public class LoadBalancerServer {
             //TODO
             int clusterToBeSent = this.getState().getUtilizationMap().isEmpty() ? 0 : this.getState().getUtilizationMap().firstKey();
             //AddToTheQueue
+            logger.info("[populateSubclusters] cluster sent are : " + clusterToBeSent);
             Raft.LogEntry le = Raft.LogEntry.newBuilder().setCommand(
                             Raft.Command.newBuilder().setCommandType("WRITE")
                                     .setValue(String.valueOf(v))
