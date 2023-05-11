@@ -40,47 +40,72 @@ public class ClientMachine {
 
     private static void appendSomeEntries(String[] args) throws InterruptedException {
         logger.info(args[0] + " : " + args[1]);
-        ManagedChannel channel = ManagedChannelBuilder.forAddress(args[0], Integer.parseInt(args[1])).usePlaintext().build();
-        ServerClientConnectionGrpc.ServerClientConnectionBlockingStub serverClientConnectionBlockingStub = ServerClientConnectionGrpc.newBlockingStub(channel);
-        Client.MetaDataRequest metaDataRequest = Client.MetaDataRequest.newBuilder().setReqType("LEADER_CONNECT").build();
+        //ManagedChannel channel = ManagedChannelBuilder.forAddress(args[0], Integer.parseInt(args[1])).usePlaintext().build();
+        //ServerClientConnectionGrpc.ServerClientConnectionBlockingStub serverClientConnectionBlockingStub = ServerClientConnectionGrpc.newBlockingStub(channel);
+        //Client.MetaDataRequest metaDataRequest = Client.MetaDataRequest.newBuilder().setReqType("LEADER_CONNECT").build();
         String leaderHost;
         int leaderPort;
-        while (true) {
-            //Shit design - Need to do something else
-            Client.MetaDataResponse metaDataResponse = serverClientConnectionBlockingStub.getLeader(metaDataRequest);
-            if (metaDataResponse.getSuccess()) {
-                leaderHost = metaDataResponse.getHost();
-                leaderPort = metaDataResponse.getPort();
-                logger.info(leaderHost + " : Leader Info : " + leaderPort);
-                break;
-            } else {
-                logger.debug("Going to sleep :"  + metaDataResponse);
-                sleep(500);
-            }
-        }
+//        while (true) {
+//            //Shit design - Need to do something else
+//            Client.MetaDataResponse metaDataResponse = serverClientConnectionBlockingStub.getLeader(metaDataRequest);
+//            if (metaDataResponse.getSuccess()) {
+//                leaderHost = metaDataResponse.getHost();
+//                leaderPort = metaDataResponse.getPort();
+//                logger.info(leaderHost + " : Leader Info : " + leaderPort);
+//                break;
+//            } else {
+//                logger.debug("Going to sleep :"  + metaDataResponse);
+//                sleep(500);
+//            }
+//        }
+//
+//        channel.shutdownNow();
 
-        channel.shutdownNow();
 
-        ManagedChannel LeaderChannel = ManagedChannelBuilder.forAddress(leaderHost, leaderPort).usePlaintext().build();
+        ManagedChannel LeaderChannel = ManagedChannelBuilder.forAddress(args[0],  Integer.parseInt(args[1])).usePlaintext().build();
         ServerClientConnectionGrpc.ServerClientConnectionBlockingStub serverClientConnectionBlockingStubLeader = ServerClientConnectionGrpc.newBlockingStub(LeaderChannel);
         int numberOfAppends = Integer.parseInt(args[2]);
-        int key = 10;
-        int val = 110;
+        int key = 0;
+        int val = 310;
         Client.Endpoint endpoint = Client.Endpoint.newBuilder().setPort(Integer.parseInt(args[4])).setHost(args[3]).build();
         logger.info("Starting the requests at :: "+ System.currentTimeMillis());
         for (int i = 0; i < numberOfAppends; i++) {
             //TODO put to const
-            Client.Request request = Client.Request.newBuilder().setCommandType("WRITE").setKey(key).setValue(val).setEndpoint(endpoint).build();
+            Client.Request request = Client.Request.newBuilder().setCommandType("WRITE").setKey(String.valueOf(i)).setValue(String.valueOf(i*20)).setEndpoint(endpoint).build();
             try {
                 Client.Response response = serverClientConnectionBlockingStubLeader.interact(request);
                 if (response.getSuccess()) {
 
-                    logger.debug("Accepted : " + key);
+                    logger.info("Accepted : " + i);
                 } else {
-                    logger.warn("Failed : " + key);
+                    logger.warn("Failed : " + i + " : ");
                 }
                 key++;
                 val++;
+            } catch (Exception e) {
+                logger.error("Something went wrong : Please check : " + e);
+            }
+
+        }
+//        sleep(1000);
+        key = 10;
+        val = 130;
+
+        for (int i = 0; i < numberOfAppends; i++) {
+            //TODO put to const
+            Client.Request request = Client.Request.newBuilder().setCommandType("READ").setKey(String.valueOf(i)).setEndpoint(endpoint).build();
+            try {
+                Client.Response response = serverClientConnectionBlockingStubLeader.interact(request);
+                if (response.getSuccess()) {
+
+                    logger.info("Accepted : " + i + " value :: " + response.getValue());
+                } else {
+                    logger.warn("Failed : " + i);
+                }
+
+//                sleep(50);
+//                key++;
+
             } catch (Exception e) {
                 logger.error("Something went wrong : Please check : " + e);
             }

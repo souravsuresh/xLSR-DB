@@ -9,6 +9,8 @@ import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.sql.Time;
+import java.sql.Timestamp;
 import java.util.List;
 import java.util.Optional;
 
@@ -31,27 +33,31 @@ public class LoadBalancerService extends LoadBalancerRequestServiceGrpc.LoadBala
         try {
             String key = request.getKey() + "_" + request.getVersion();
             Optional<String> s = server.getDb().read(key);
-            if(!s.isPresent()) {
-                logger.debug("[LoadBalancerGetEntries] Key with version not found in data cluster :: "+key);
-                responseBuilder.setReturnCode(-1);      // key with version not there
-            }
-            else if(request.getTimestamp().compareTo(String.valueOf(server.getState().getHeartbeatTrackerTime() +  5 * 80 * 3)) > 0) {
+            if(!s.isPresent() && (Timestamp.valueOf(request.getTimestamp()).getTime() - System.currentTimeMillis()) > 10000) {
                 logger.debug("[LoadBalancerGetEntries] Key with version not found in data cluster :: "+key);
                 responseBuilder.setReturnCode(-2);  // scenario of ghost to write
-            } else {
+            }
+            else if(!s.isPresent()) {
+                logger.debug("[LoadBalancerGetEntries] Key with version not found in data cluster :: "+key);
+                responseBuilder.setReturnCode(-1);      // key with version not there
+
+            }
+            else {
                 logger.debug("[LoadBalancerGetEntries] Key with version found in data cluster with value :: "+s.get());  // @TODO :: remove this log!
                 responseBuilder.setValue(s.get());
                 responseBuilder.setReturnCode(0);
             }
+            responseBuilder.build();
+            responseObserver.onNext(responseBuilder.build());
+            responseObserver.onCompleted();
 
         } catch (Exception ex) {
             logger.debug("Exception found :: "+ex);
         } finally {
             this.server.getLock().unlock();
         }
-        responseBuilder.build();
-        responseObserver.onNext(responseBuilder.build());
-        responseObserver.onCompleted();
+
+
     }
     @Override
     public void sendEntries(Loadbalancer.LoadBalancerRequest request,
@@ -75,9 +81,6 @@ public class LoadBalancerService extends LoadBalancerRequestServiceGrpc.LoadBala
                 String key = pairObject.getKey();
                 if(command.equals("WRITE")){
                     server.putValue(entry);
-                }
-                else if(command.equals("READ")){
-                    server.getValue(key);
                 }
             }
             logger.info("[LoadBalancerSendEntries] Snapshot after adding entries :: "+ this.server.getState().getSnapshot());

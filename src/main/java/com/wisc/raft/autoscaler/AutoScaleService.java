@@ -27,11 +27,10 @@ public class AutoScaleService extends AutoScaleGrpc.AutoScaleImplBase {
     AutoScaleService(){
         this.scanner = new Scanner(System.in);
         clusterDetails = new ArrayList<String>(Arrays.asList(
-                "0_localhost_8081_1_localhost_8082_2_localhost_8083",
                 "0_localhost_4081_1_localhost_4082_2_localhost_4083",
                 "0_localhost_5081_1_localhost_5082_2_localhost_5083",
                 "0_localhost_6081_1_localhost_6082_2_localhost_6083",
-                "0_localhost_7081_1_localhost_7082_2_loca;host_7083"
+                "0_localhost_7081_1_localhost_7082_2_localhost_7083"
 
                 ));
     }

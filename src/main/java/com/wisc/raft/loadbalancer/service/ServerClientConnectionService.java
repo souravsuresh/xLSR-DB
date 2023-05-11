@@ -67,18 +67,30 @@ public class ServerClientConnectionService extends ServerClientConnectionGrpc.Se
     //@TODO : Probably should Long instead of long
     @Override
     public void interact(Client.Request request, StreamObserver<Client.Response> res){
+        logger.debug("HI Appending");
         String commandType = request.getCommandType();
         Client.Response response = Client.Response.newBuilder().setSuccess(false).setValue(-1).build();
-        if (!this.server.getState().getNodeType().equals(Role.LEADER)) {
-            logger.warn("Cant perform action as this is not leader!!");
-            res.onNext(response);
-            res.onCompleted();
-        }
+//        if (this.server.getState().getNodeType() != Role.LEADER) {
+//            logger.warn("Cant perform action as this is not leader!!");
+//        }
 
-        if(commandType.equals("WRITE") || commandType.equals("READ")){
+        if(commandType.equals("WRITE")){
             logger.debug("[interact] Can perform either operation ");
             long ret = server.preCall(request);
             if(ret > 0){
+                logger.info("[interact] check + " + ret);
+                response = Client.Response.newBuilder().setSuccess(true).setValue(ret).build();
+            }
+        }
+
+        else if(commandType.equals("READ")){
+            int ret = server.sendReadCalls(request);
+            if(ret < 0){
+                logger.error("[interact] Got error for this operation called read" + ret);
+
+            }
+            else{
+                logger.debug("[interact] Here is your read :" + ret);
                 response = Client.Response.newBuilder().setSuccess(true).setValue(ret).build();
             }
         }

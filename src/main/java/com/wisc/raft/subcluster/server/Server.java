@@ -101,17 +101,18 @@ public class Server {
         electionExecutorService = Executors.newSingleThreadScheduledExecutor();
         commitSchedulerService = Executors.newSingleThreadScheduledExecutor();
         replySchedulerService = Executors.newSingleThreadScheduledExecutor();
-//        replyScheduler = replySchedulerService.scheduleAtFixedRate(replyClientExecutorRunnable,2, 3000, TimeUnit.SECONDS);
-//        commitScheduler = commitSchedulerService.scheduleAtFixedRate(initiateElectionExecutorRunnable, 2L, 200, TimeUnit.MILLISECONDS);
-//        electionScheduler = electionExecutorService.scheduleAtFixedRate(initiateElectionRPCRunnable, 1L, (long) (100 + random.nextDouble() * 100), TimeUnit.MILLISECONDS);
-//        heartbeatExecutorService = Executors.newSingleThreadScheduledExecutor();
-//        heartBeatScheduler = heartbeatExecutorService.scheduleAtFixedRate(initiateHeartbeatRPCRunnable, 1500, 80, TimeUnit.MILLISECONDS);
-
-        replyScheduler = replySchedulerService.scheduleAtFixedRate(replyClientExecutorRunnable,2, 3000, TimeUnit.SECONDS); // @TODO :: CHECK this
-        commitScheduler = commitSchedulerService.scheduleAtFixedRate(initiateElectionExecutorRunnable, 2L, 15, TimeUnit.SECONDS);
-        electionScheduler = electionExecutorService.scheduleAtFixedRate(initiateElectionRPCRunnable, 1L, 4, TimeUnit.SECONDS);
+        replyScheduler = replySchedulerService.scheduleAtFixedRate(replyClientExecutorRunnable,2, 8000, TimeUnit.SECONDS);
+        commitScheduler = commitSchedulerService.scheduleAtFixedRate(initiateElectionExecutorRunnable, 2L, 200, TimeUnit.MILLISECONDS);
+        electionScheduler = electionExecutorService.scheduleAtFixedRate(initiateElectionRPCRunnable, 1L, (long) (100 + random.nextDouble() * 100), TimeUnit.MILLISECONDS);
         heartbeatExecutorService = Executors.newSingleThreadScheduledExecutor();
-        heartBeatScheduler = heartbeatExecutorService.scheduleAtFixedRate(initiateHeartbeatRPCRunnable, 1L, 1, TimeUnit.SECONDS);
+        heartBeatScheduler = heartbeatExecutorService.scheduleAtFixedRate(initiateHeartbeatRPCRunnable, 1500, 80, TimeUnit.MILLISECONDS);
+
+//        replyScheduler = replySchedulerService.scheduleAtFixedRate(replyClientExecutorRunnable,2, 3000, TimeUnit.SECONDS); // @TODO :: CHECK this
+//        commitScheduler = commitSchedulerService.scheduleAtFixedRate(initiateElectionExecutorRunnable, 2L, 15, TimeUnit.SECONDS);
+//        electionScheduler = electionExecutorService.scheduleAtFixedRate(initiateElectionRPCRunnable, 1L, 4, TimeUnit.SECONDS);
+//        heartbeatExecutorService = Executors.newSingleThreadScheduledExecutor();
+//        heartBeatScheduler = heartbeatExecutorService.scheduleAtFixedRate(initiateHeartbeatRPCRunnable, 1L, 1, TimeUnit.SECONDS);
+//
     }
 
     private void initiateReplyScheduleRPC(){
@@ -477,10 +478,10 @@ public class Server {
         }
     }
 
-    public String getValue(String key) {
-        String value = db.read(String.valueOf(key)).get();
-        return value;
-    }
+//    public String getValue(String key) {
+//        String value = db.read(String.valueOf(key)).get();
+//        return value;
+//    }
 
     public int putValue(Raft.LogEntry entry) {
         lock.lock();

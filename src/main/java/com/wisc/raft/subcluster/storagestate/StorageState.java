@@ -35,7 +35,7 @@ public class StorageState {
         this.threshold = threshold;
     }
 
-    public float getUtilization(){
+    public float  getUtilization(){
         Path directory = Paths.get(this.dirPath);
         try {
             if (!Files.exists(directory)) {

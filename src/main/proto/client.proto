@@ -18,11 +18,11 @@ message StatusUpdate{
 }
 
 message Request {
-  uint64 key = 1;
-  uint64 value = 2;
+  string key = 1;
+  string value = 2;
   string commandType = 3;
   Endpoint endpoint = 4;
-
+  bool acceptOlderVersion = 5;
 };
 
 message Response {

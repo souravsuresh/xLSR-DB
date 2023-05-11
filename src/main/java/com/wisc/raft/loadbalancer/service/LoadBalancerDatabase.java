@@ -11,11 +11,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
 
 import static org.iq80.leveldb.impl.Iq80DBFactory.factory;
 
@@ -26,28 +25,28 @@ public class LoadBalancerDatabase {
     private String path;
     private DB db;
 
-    public ConcurrentHashMap<String, Pair<Integer, Integer>> getCacheEntry() {
+    public HashMap<String, Pair<Integer, Integer>> getCacheEntry() {
         return cacheEntry;
     }
 
-    public void setCacheEntry(ConcurrentHashMap<String, Pair<Integer,Integer>> cacheEntry) {
+    public void setCacheEntry(HashMap<String, Pair<Integer,Integer>> cacheEntry) {
         this.cacheEntry = cacheEntry;
     }
 
-    ConcurrentHashMap<String, Pair<Integer, Integer>> cacheEntry;
-    ConcurrentHashMap<byte[], Integer> concurrentCleanUpList;
+    HashMap<String, Pair<Integer, Integer>> cacheEntry;
+    HashMap<byte[], Integer> concurrentCleanUpList;
     int keep = 3;
 
     public LoadBalancerDatabase(String path) {
         Options options = new Options();
         options.createIfMissing(true);
-        concurrentCleanUpList = new ConcurrentHashMap<>();
-        cacheEntry = new ConcurrentHashMap<>();
+        concurrentCleanUpList = new HashMap<>();
+        cacheEntry = new HashMap<>();
         this.path = path;
         try {
             db = factory.open(new File(this.path), options);
         } catch (Exception e) {
-            System.out.println("[LbDatabase] Error in Database creation : " + e);
+           logger.error("[LbDatabase] Error in Database creation : " + e);
         }
     }
 
@@ -77,7 +76,11 @@ public class LoadBalancerDatabase {
             listOfVersion.add(new Pair<>(logEntry.getCommand().getVersion(), logEntry.getClusterId()));
             byte[] object = serialize(listOfVersion);
             //
-            cacheEntry.remove("key");
+//            if(cacheEntry.containsKey(logEntry.getCommand().getKey())){
+//                cacheEntry.get(logEntry.getCommand().getKey()) == logEntry.get
+//            }
+//            cacheEntry.remove(logEntry.getCommand().getKey());
+            logger.info("[commit] removed entry : " + logEntry.getCommand().getKey());
             if (Objects.isNull(keyBytes)) {
                 logger.error("[LbDatabase] LogEntry cannot not be serialized");
                 return 1;
@@ -101,7 +104,7 @@ public class LoadBalancerDatabase {
         }
         byte[] bytes = db.get(keyBytes);
         if(bytes == null){
-            logger.error("[LbDatabase] No value exists " );
+            logger.debug("[LbDatabase] No value exists " );
             readLBObject.setReturnVal(2);
             readLBObject.setVersionNumber(0);
             return new ArrayList<>();
@@ -139,7 +142,10 @@ public class LoadBalancerDatabase {
         }
         try {
             List<Pair<Integer, Integer>> listOfVersion = deserialize(bytes);
+            logger.info("[read] list : + " + listOfVersion);
             if(listOfVersion.isEmpty()){
+                logger.error("[LbDatabase] No value exists in the list " );
+
                 readLBObject.setReturnVal(2);
                 readLBObject.setVersionNumber(0);
 
@@ -149,8 +155,8 @@ public class LoadBalancerDatabase {
                 concurrentCleanUpList.put(keyBytes,0);
             }
             readLBObject.setReturnVal(0);
-            readLBObject.setClusterId(listOfVersion.get(listOfVersion.size() - 1).getKey());
-            readLBObject.setVersionNumber(listOfVersion.get(listOfVersion.size() - 1).getValue());
+            readLBObject.setClusterId(listOfVersion.get(listOfVersion.size() - 1).getValue());
+            readLBObject.setVersionNumber(listOfVersion.get(listOfVersion.size() - 1).getKey());
 
             return readLBObject;
         } catch (Exception e) {

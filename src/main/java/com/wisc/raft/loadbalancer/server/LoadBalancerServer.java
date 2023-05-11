@@ -9,6 +9,7 @@ import com.wisc.raft.loadbalancer.service.RaftConsensusService;
 import com.wisc.raft.loadbalancer.state.NodeState;
 import com.wisc.raft.proto.*;
 import com.wisc.raft.subcluster.service.LoadBalancerService;
+import io.grpc.Channel;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import javafx.util.Pair;
@@ -142,61 +143,70 @@ public class LoadBalancerServer {
         liveLinessSchedulerService = Executors.newSingleThreadScheduledExecutor();
         cleanUpVersionService = Executors.newSingleThreadScheduledExecutor();
         cleanUpVersionService.scheduleAtFixedRate(cleanUpVersionsRunnable,1,1,TimeUnit.HOURS);
-        liveLinessSchedulerService.scheduleAtFixedRate(sendLiveLinessProbesRunnable, 0, 10, TimeUnit.SECONDS);
-        electionScheduler = electionExecutorService.scheduleAtFixedRate(initiateElectionRPCRunnable, 2, 14, TimeUnit.SECONDS);
+        liveLinessSchedulerService.scheduleAtFixedRate(sendLiveLinessProbesRunnable, 0, 500, TimeUnit.MILLISECONDS);
+        //electionScheduler = electionExecutorService.scheduleAtFixedRate(initiateElectionRPCRunnable, 2, 14, TimeUnit.SECONDS);
 
-//        electionScheduler = electionExecutorService.scheduleAtFixedRate(initiateElectionRPCRunnable, 1L, (long) (100 + random.nextDouble() * 100), TimeUnit.MILLISECONDS);
+        electionScheduler = electionExecutorService.scheduleAtFixedRate(initiateElectionRPCRunnable, 1L, (long) (100 + random.nextDouble() * 100), TimeUnit.MILLISECONDS);
         heartbeatExecutorService = Executors.newSingleThreadScheduledExecutor();
-        heartBeatScheduler = heartbeatExecutorService.scheduleAtFixedRate(initiateHeartbeatRPCRunnable, 1, 7, TimeUnit.SECONDS);
-//        heartBeatScheduler = heartbeatExecutorService.scheduleAtFixedRate(initiateHeartbeatRPCRunnable, 1500, 80, TimeUnit.MILLISECONDS);
+        //heartBeatScheduler = heartbeatExecutorService.scheduleAtFixedRate(initiateHeartbeatRPCRunnable, 1, 7, TimeUnit.SECONDS);
+        heartBeatScheduler = heartbeatExecutorService.scheduleAtFixedRate(initiateHeartbeatRPCRunnable, 1500, 80, TimeUnit.MILLISECONDS);
         loadBalancerProcessorSchedulerService = Executors.newSingleThreadScheduledExecutor();
-        loadBalancerProcessorScheduler = loadBalancerProcessorSchedulerService.scheduleAtFixedRate(loadBalancerProcessorRunnable, 2, 7, TimeUnit.SECONDS);
+        loadBalancerProcessorScheduler = loadBalancerProcessorSchedulerService.scheduleAtFixedRate(loadBalancerProcessorRunnable, 200, 500, TimeUnit.MILLISECONDS);
 
         commitSchedulerService = Executors.newSingleThreadScheduledExecutor();
-        commitScheduler = commitSchedulerService.scheduleAtFixedRate(initiateCommitRPCRunnable, 2, 10, TimeUnit.SECONDS);
+        commitScheduler = commitSchedulerService.scheduleAtFixedRate(initiateCommitRPCRunnable, 2, 250, TimeUnit.MILLISECONDS);
 
     }
 
     private void checkAndCommitFromLoadBalancerProcessor(int clusterIndex) {
-        lock.lock();
+//        lock.lock();
         try {
             logger.debug("[checkAndCommitFromLoadBalancerProcessor] Indexes commit2 :: "+ this.state.getLastLoadBalancerCommitIndex().get(clusterIndex) + " :: processed"
-                        +this.state.getLastLoadBalancerProcessed().get(clusterIndex) + " :: Last Log index"
-                        + this.state.getLastLoadBalancerLogIndex().get(clusterIndex));
+                    +this.state.getLastLoadBalancerProcessed().get(clusterIndex) + " :: Last Log index"
+                    + this.state.getLastLoadBalancerLogIndex().get(clusterIndex));
+
+
             if(this.state.getLoadBalancerEntries().get(clusterIndex).size() == 0) {
                 logger.info("[checkAndCommitFromLoadBalancerProcessor] Nothing to commit from LB to DB");
                 return;
             }
-            if(this.state.getLastLoadBalancerCommitIndex().get(clusterIndex) >= this.state.getLastLoadBalancerProcessed().get(clusterIndex)) {
+            if(this.state.getLastLoadBalancerCommitIndex().get(clusterIndex) > this.state.getLastLoadBalancerProcessed().get(clusterIndex)) {
                 logger.info("[checkAndCommitFromLoadBalancerProcessor] Last log index and commit index are same. Nothing to commit");
                 return;
             }
-
-            for(long i = this.state.getLastLoadBalancerCommitIndex().get(clusterIndex) + 1L;
-                        i < this.state.getLastLoadBalancerProcessed().get(clusterIndex); ++i){
+//            if(this.state.getLastLoadBalancerCommitIndex().get(clusterIndex) == -1) {
+//                logger.debug("[checkAndCommitFromLoadBalancerProcessor] init case");
+//                this.state.getLastLoadBalancerCommitIndex().set(clusterIndex, 0L);
+//            }
+            for(long i = this.state.getLastLoadBalancerCommitIndex().get(clusterIndex) + 1;
+                i < this.state.getLastLoadBalancerProcessed().get(clusterIndex); ++i){
                 String key = this.state.getLoadBalancerEntries().get(clusterIndex).get((int) i).getCommand().getKey();
                 int version = this.state.getLoadBalancerEntries().get(clusterIndex).get((int) i).getCommand().getVersion();
                 String value = clusterIndex + "_v1";
                 Raft.LogEntry le = Raft.LogEntry.newBuilder()
-                                        .setCommand(Raft.Command.newBuilder()
-                                                    .setValue(value)
-                                                    .setKey(key).setVersion(version).build())
-                                        .setTerm(this.state.getCurrentTerm())
-                                        .setIndex("METADATA")
-                                        .setClusterId(clusterIndex)
-                                        .setRequestId(String.valueOf(UUID.randomUUID())).build();
+                        .setCommand(Raft.Command.newBuilder()
+                                .setValue(value)
+                                .setKey(key).setVersion(version).build())
+                        .setTerm(this.state.getCurrentTerm())
+                        .setIndex("METADATA")
+                        .setClusterId(clusterIndex)
+                        .setRequestId(String.valueOf(UUID.randomUUID())).build();
                 // Adding to snapshot so that LB gets further consensus
                 this.state.getSnapshot().add(le);
                 logger.debug("[checkAndCommitFromLoadBalancerProcessor] "+ le.getTerm() + " :: " + le.getCommand().getKey() +" -> "+le.getCommand().getValue());
             }
+            if(this.state.getLastLoadBalancerCommitIndex().get(clusterIndex) == 0L) {
+                logger.debug("[checkAndCommitFromLoadBalancerProcessor] init case adding 1");
+                this.state.getLastLoadBalancerCommitIndex().set(clusterIndex, 1L);
+            }
             this.state.getLastLoadBalancerCommitIndex().set(clusterIndex, this.state.getLastLoadBalancerProcessed().get(clusterIndex) - 1);
         } finally {
-            lock.unlock();
+//            lock.unlock();
         }
     }
 
     private void initiateCommitScheduleRPC(){
-        lock.lock();
+        //lock.lock();
         try {
             if (this.state.getNodeType() == Role.LEADER) {
                 for(int i = 0; i < this.subClusterList.size(); ++i) {
@@ -245,7 +255,7 @@ public class LoadBalancerServer {
             ex.printStackTrace();
         }
         finally {
-            lock.unlock();
+            //lock.unlock();
         }
     }
 
@@ -257,7 +267,7 @@ public class LoadBalancerServer {
 //            this.state.getLoadBalancerSnapshot().get(c.getAndIncrement()).add(le);
 //        });
         // @TODO :: Also test with preCall method
-        Client.Request request = Client.Request.newBuilder().setEndpoint(Client.Endpoint.getDefaultInstance()).setCommandType("UNIT_TEST").setCommandType("WRITE").setValue(random.nextInt(2)).setKey(random.nextInt(5)).build();
+        Client.Request request = Client.Request.newBuilder().setEndpoint(Client.Endpoint.getDefaultInstance()).setCommandType("UNIT_TEST").setCommandType("WRITE").setValue(String.valueOf(random.nextInt(2))).setKey(String.valueOf(random.nextInt(5))).build();
         logger.debug("[populatedata] request :: "+request);
         this.preCall(request);
     }
@@ -281,7 +291,6 @@ public class LoadBalancerServer {
 //                    this.state.getSnapshot().add();
 //                }
 //                return;
-                this.populateSubclusters();
                 return;
             }
             if (!Objects.isNull(this.state.getVotedFor()) && this.state.getNodeType().equals(Role.FOLLOWER)) {
@@ -492,7 +501,8 @@ public class LoadBalancerServer {
 
             // if getLastLogIndex is 0 then its a initial case where currnet node is starting fresh
             // && validating if all the elements within process list (elements between lastProcess - lastLBLogIndex
-            if(this.state.getLoadBalancerSnapshot().get(clusterIndex).size() == 0) {
+            if(this.state.getLoadBalancerSnapshot().get(clusterIndex).size() == 0
+                    && this.state.getLoadBalancerEntries().get(clusterIndex).size() == 0) {
                 logger.debug("Nothing to process for this cluster :: "+ clusterIndex);
                 return;
             }
@@ -523,7 +533,7 @@ public class LoadBalancerServer {
             }
 
             this.state.getLoadBalancerEntries().get(clusterIndex).stream().forEach(le -> {
-                    logger.debug(le.getTerm() + " :: " + le.getCommand().getKey() +" -> "+le.getCommand().getValue());
+                logger.debug(le.getTerm() + " :: " + le.getCommand().getKey() +" -> "+le.getCommand().getValue());
             });
             for (long i = this.state.getLastLoadBalancerProcessed().get(clusterIndex);
                  i < this.state.getLastLoadBalancerLogIndex().get(clusterIndex); ++i) {
@@ -563,6 +573,7 @@ public class LoadBalancerServer {
                     continue;
                 }
                 entryToSend.add(this.state.getLoadBalancerEntries().get(clusterIndex).get((int) i));
+                logger.info("[sendLoadBalancerEntries] Entry sending size :: "+this.state.getLoadBalancerEntries().get(clusterIndex).size());
             }
             requestBuilder.addAllEntries(entryToSend);
             logger.debug("[sendLoadBalancerEntries] Final Request :: "+ requestBuilder.toString());
@@ -699,14 +710,14 @@ public class LoadBalancerServer {
      */
     public long preCall(Client.Request request) {
         logger.debug("[preCall] Cache entries :: "+db.getCacheEntry());
-        logger.debug("[preCall] Log Entries :: "+this.state.getLoadBalancerEntries().get(0));
-        logger.debug("[preCall] Snapshot :: "+this.state.getLoadBalancerSnapshot().get(0));
+//        logger.debug("[preCall] Log Entries :: "+this.state.getLoadBalancerEntries().get(0));
+//        logger.debug("[preCall] Snapshot :: "+this.state.getLoadBalancerSnapshot().get(0));
         String key = String.valueOf(request.getKey());
         if(subClusterList.isEmpty()){
             log.error("[preCall] wait for your turn you little shit");
             return -5;
         }
-        if(db.getCacheEntry().containsKey(key) && request.getCommandType().equals("READ")){
+        /*if(db.getCacheEntry().containsKey(key) && request.getCommandType().equals("READ")){
             int clusterId = db.getCacheEntry().get(key).getValue();
             int versionNumber = db.getCacheEntry().get(key).getKey();
             if (subClusterList.size() > clusterId) {
@@ -725,27 +736,28 @@ public class LoadBalancerServer {
             } else {
                 return -1; // Error code for cluster Not available;
             }
-        }
+        }*/
 
         if(db.getCacheEntry().containsKey(key) && request.getCommandType().equals("WRITE")){
-            logger.info("[UNITTEST-populateSubclusters] From Cache : ");
+            logger.debug("[UNITTEST-populateSubclusters] From Cache : ");
             String value = String.valueOf(request.getValue());
             Pair<Integer, Integer> integerIntegerPair = db.getCacheEntry().get(key);
-            Pair<Integer,Integer> pair = new Pair<>(integerIntegerPair.getKey()+1, integerIntegerPair.getValue());
+            int clusterToBeSent = this.getState().getUtilizationMap().isEmpty() ? 0 : this.getState().getUtilizationMap().firstKey();
+            logger.debug("[HELP] +" + clusterToBeSent);
+            Pair<Integer,Integer> pair = new Pair<>(integerIntegerPair.getKey()+1, clusterToBeSent);
             db.getCacheEntry().put(key, pair);
             int clusterId = pair.getValue();
             if (subClusterList.size() > clusterId) {
                 int versionNumber = pair.getKey();
-                int clusterToBeSent = this.getState().getUtilizationMap().isEmpty() ? 0 : this.getState().getUtilizationMap().firstKey();
                 Raft.LogEntry le = Raft.LogEntry.newBuilder().setCommand(
-                                                Raft.Command.newBuilder().setCommandType("WRITE")
-                                                                        .setValue(String.valueOf(value))
-                                                                        .setKey(String.valueOf(key))
-                                                                        .setVersion(versionNumber).build())
-                                                .setTerm(this.state.getCurrentTerm())
-                                                .setClusterId(clusterToBeSent)
-                                                .setIndex("UNIT_TEST").build();
-                logger.info("[UNITTEST-populateSubclusters] Adding via Cache : "+ le);
+                                Raft.Command.newBuilder().setCommandType("WRITE")
+                                        .setValue(String.valueOf(value))
+                                        .setKey(String.valueOf(key))
+                                        .setVersion(versionNumber).build())
+                        .setTerm(this.state.getCurrentTerm())
+                        .setClusterId(clusterToBeSent)
+                        .setIndex("UNIT_TEST").build();
+                logger.debug("[UNITTEST-populateSubclusters] Adding via Cache : "+ le);
                 this.state.getLoadBalancerSnapshot().get(clusterToBeSent).add(le);
                 return 1;
 
@@ -761,22 +773,23 @@ public class LoadBalancerServer {
             return -2; // Error code DB READ failure
         }
 
-        if (request.getCommandType().equals("READ")) {
-            int clusterId = readLBObject.getClusterId();
-            if (subClusterList.size() > clusterId) {
-                Raft.LogEntry le = Raft.LogEntry.newBuilder().setCommand(Raft.Command.newBuilder().setCommandType("READ").setKey(String.valueOf(key)).build()).setTerm(this.state.getCurrentTerm()).setIndex("UNIT_TEST").build();
-//                this.state.getLoadBalancerSnapshot().get(clusterId).add(le);
-                // @TODO :: Add service call
-                return 1;
-
-            } else {
-                return -1; // Error code for cluster Not available;
-            }
-        } else if (request.getCommandType().equals("WRITE")) {
+//        if (request.getCommandType().equals("READ")) {
+//            int clusterId = readLBObject.getClusterId();
+//            if (subClusterList.size() > clusterId) {
+//                Raft.LogEntry le = Raft.LogEntry.newBuilder().setCommand(Raft.Command.newBuilder().setCommandType("READ").setKey(String.valueOf(key)).build()).setTerm(this.state.getCurrentTerm()).setIndex("UNIT_TEST").build();
+////                this.state.getLoadBalancerSnapshot().get(clusterId).add(le);
+//                // @TODO :: Add service call
+//                return 1;
+//
+//            } else {
+//                return -1; // Error code for cluster Not available;
+//            }
+//        } else
+        if (request.getCommandType().equals("WRITE")) {
             int versionNumber = readLBObject.getVersionNumber();
-            long k = request.getKey();
-            long v = request.getValue();
-            
+            String k = request.getKey();
+            String v = request.getValue();
+
             //TODO
             int clusterToBeSent = this.getState().getUtilizationMap().isEmpty() ? 0 : this.getState().getUtilizationMap().firstKey();
             //AddToTheQueue
@@ -788,7 +801,7 @@ public class LoadBalancerServer {
                     .setTerm(this.state.getCurrentTerm())
                     .setClusterId(clusterToBeSent)
                     .setIndex("UNIT_TEST").build();
-            logger.info("[UNITTEST-populateSubclusters] Adding le : "+ le);
+            logger.debug("[UNITTEST-populateSubclusters] Adding le : "+ le);
             //TODO be more stirngent
             db.getCacheEntry().put(key, new Pair<>(versionNumber + 1, clusterToBeSent));
             this.state.getLoadBalancerSnapshot().get(clusterToBeSent).add(le);
@@ -805,27 +818,7 @@ public class LoadBalancerServer {
         return -6;
     }
 
-//    public int putValue(long key, long val, String clientKey) {
-//        lock.lock();
-//        try {
-//            int numOfEntries = 1;
-//            //TODO should we pull the leader check code there ?
-//            //TODO add cmd type from params and make this into a loop
-//            Raft.Command command = Raft.Command.newBuilder().setCommandType("Something").setKey(key).setValue(val).build();
-//            String requestId = String.valueOf(UUID.randomUUID());
-//            Raft.LogEntry logEntry = Raft.LogEntry.newBuilder().setRequestId(requestId)
-//                    .setCommand(command)
-//                    .setIndex(String.valueOf(this.state.getEntries().size()))
-//                    .setTerm(this.state.getCurrentTerm()).build();
-//
-//            this.persistentStore.put(requestId, new Pair<>(clientKey,null));
-//            this.state.getSnapshot().add(logEntry);
-//            logger.debug("Created request with id :: "+ requestId);
-//            return 0;
-//        } finally {
-//            lock.unlock();
-//        }
-//    }
+
 
     private void initiateCleanUpVersions(){
         if (this.state.getNodeType() != Role.LEADER) {
@@ -912,6 +905,86 @@ public class LoadBalancerServer {
                 lock.unlock();
             }
         }
+    }
+
+    public int sendReadCalls(Client.Request request){
+        String key = request.getKey();
+        logger.debug("[sendReadCalls] : "  + Objects.isNull((db.getCacheEntry().getOrDefault(key, null))) + " : " + key +  "db.getCacheEntry()) " + db.getCacheEntry());
+//        lock.lock();
+        try {
+            logger.debug("[sendReadCalls] Entries :: "+ db.getCacheEntry());
+            if (!Objects.isNull(db.getCacheEntry().getOrDefault(key, null))) {
+                int clusterId = db.getCacheEntry().get(key).getValue();
+                int versionNumber = db.getCacheEntry().get(key).getKey();
+                if (versionNumber == 0) {
+                    logger.error("[sendReadCalls] Failed for something else cahce");
+                    return -1;
+                }
+
+                if (subClusterList.size() > clusterId) {
+                    Raft.ServerConnect subClusterConnect = this.subClusterList.get(clusterId);
+                    ManagedChannel channel = ManagedChannelBuilder.forAddress(subClusterConnect.getEndpoint().getHost(), subClusterConnect.getEndpoint().getPort()).usePlaintext().build();
+                    try {
+                        Loadbalancer.DataReadRequestObject.Builder requestBuilder = Loadbalancer.DataReadRequestObject.newBuilder();
+                        requestBuilder.setVersion(versionNumber);
+                        requestBuilder.setKey(String.valueOf(key));
+                        requestBuilder.setTimestamp(String.valueOf(System.currentTimeMillis()));
+                        LoadBalancerRequestServiceGrpc.LoadBalancerRequestServiceBlockingStub loadBalancerRequestServiceStub = LoadBalancerRequestServiceGrpc.newBlockingStub(channel);
+                        Loadbalancer.DataReadResponseObject response = loadBalancerRequestServiceStub.getEntries(requestBuilder.build());
+                        logger.debug("[sendReadCalls] Got Response for Key from cache : " + key + " : " + (response.getReturnCode() >= 0 ? Integer.parseInt(response.getValue()) : response.getReturnCode()));
+
+                        return response.getReturnCode() >= 0 ? Integer.parseInt(String.valueOf(response.getValue())) : response.getReturnCode();
+
+                    } finally {
+                        channel.shutdownNow();
+                    }
+                } else {
+                    logger.error("[sendReadCalls] Cluster doesn't exist cache");
+                    return -2;
+                }
+
+            }
+            ReadLBObject readLBObject = db.read(String.valueOf(key));
+            int retValue = readLBObject.getReturnVal();
+
+            if (retValue < 0) {
+                logger.error("[sendReadCalls] Failed " + key);
+                return retValue;
+            }
+            int versionNumber = readLBObject.getVersionNumber();
+            logger.debug("[sendReadCalls] After Entries :: "+ db.getCacheEntry());
+            if (versionNumber == 0) {
+                logger.error("[sendReadCalls] Failed for something else : " + key);
+                return -1;
+            }
+            int clusterId = readLBObject.getClusterId();
+
+            if (subClusterList.size() > clusterId) {
+                Raft.ServerConnect subClusterConnect = this.subClusterList.get(clusterId);
+                ManagedChannel channel = ManagedChannelBuilder.forAddress(subClusterConnect.getEndpoint().getHost(), subClusterConnect.getEndpoint().getPort()).usePlaintext().build();
+                try {
+                    Loadbalancer.DataReadRequestObject.Builder requestBuilder = Loadbalancer.DataReadRequestObject.newBuilder();
+                    requestBuilder.setVersion(versionNumber);
+                    requestBuilder.setKey(String.valueOf(key));
+                    requestBuilder.setTimestamp(String.valueOf(System.currentTimeMillis()));
+                    LoadBalancerRequestServiceGrpc.LoadBalancerRequestServiceBlockingStub loadBalancerRequestServiceStub = LoadBalancerRequestServiceGrpc.newBlockingStub(channel);
+                    Loadbalancer.DataReadResponseObject response = loadBalancerRequestServiceStub.getEntries(requestBuilder.build());
+                    logger.debug("[sendReadCalls] Got Respone for Key : " + key + " : " + (response.getReturnCode() >= 0 ? Integer.parseInt(response.getValue()) : response.getReturnCode()));
+                    return response.getReturnCode() >= 0 ? Integer.parseInt(response.getValue()) : response.getReturnCode();
+
+                } finally {
+                    channel.shutdownNow();
+                }
+            } else {
+                logger.error("[sendReadCalls] Cluster doesn't exist");
+                return -2;
+            }
+        }
+        finally {
+//            lock.unlock();
+        }
+
+
     }
 
 
