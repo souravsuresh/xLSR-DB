@@ -35,7 +35,8 @@ public class ClientMachine {
 //        logger.info("Finish");
 //        long cp2 = System.currentTimeMillis() - start;
 //        logger.info(cp1 + " : " + cp2);
-        loop(args);
+        appendSomeEntries(args);
+//        loop(args);
         server.shutdownNow();
     }
 
@@ -70,6 +71,7 @@ public class ClientMachine {
         int val = 310;
         Client.Endpoint endpoint = Client.Endpoint.newBuilder().setPort(Integer.parseInt(args[4])).setHost(args[3]).build();
         logger.info("Starting the requests at :: "+ System.currentTimeMillis());
+        long start = System.currentTimeMillis();
         for (int i = 0; i < numberOfAppends; i++) {
             //TODO put to const
             Client.Request request = Client.Request.newBuilder().setCommandType("WRITE").setKey(String.valueOf(i)).setValue(String.valueOf(i*20)).setEndpoint(endpoint).build();
@@ -77,7 +79,7 @@ public class ClientMachine {
                 Client.Response response = serverClientConnectionBlockingStubLeader.interact(request);
                 if (response.getSuccess()) {
 
-                    logger.info("Accepted : " + i);
+                    logger.debug("Accepted : " + i);
                 } else {
                     logger.warn("Failed : " + i + " : ");
                 }
@@ -88,31 +90,34 @@ public class ClientMachine {
             }
 
         }
-//        sleep(1000);
         key = 10;
         val = 130;
+        logger.info("Write Took :: "+ (System.currentTimeMillis() - start));
 
-        for (int i = 0; i < numberOfAppends; i++) {
-            //TODO put to const
-            Client.Request request = Client.Request.newBuilder().setCommandType("READ").setKey(String.valueOf(i)).setEndpoint(endpoint).build();
-            try {
-                Client.Response response = serverClientConnectionBlockingStubLeader.interact(request);
-                if (response.getSuccess()) {
-
-                    logger.info("Accepted : " + i + " value :: " + response.getValue());
-                } else {
-                    logger.warn("Failed : " + i);
-                }
-
-//                sleep(50);
-//                key++;
-
-            } catch (Exception e) {
-                logger.error("Something went wrong : Please check : " + e);
-            }
-
-        }
-        logger.info("Finished the requests at :: "+ System.currentTimeMillis());
+//        long readstart = System.currentTimeMillis();
+//        for (int i = 0; i < numberOfAppends; i++) {
+//            //TODO put to const
+//            Client.Request request = Client.Request.newBuilder().setCommandType("READ").setKey(String.valueOf(i)).setEndpoint(endpoint).build();
+//            try {
+//                Client.Response response = serverClientConnectionBlockingStubLeader.interact(request);
+//                if (response.getSuccess()) {
+//
+//                    logger.debug("Accepted : " + i + " value :: " + response.getValue());
+//                } else {
+//                    logger.warn("Failed : " + i);
+//                }
+//
+////                sleep(50);
+////                key++;
+//
+//            } catch (Exception e) {
+//                logger.error("Something went wrong : Please check : " + e);
+//            }
+//
+//        }
+//        logger.info("Read Took :: "+ (System.currentTimeMillis() - readstart));
+//        logger.info("Finished the requests at :: "+ System.currentTimeMillis());
+//        logger.info("Total :: "+ (System.currentTimeMillis() - start));
         LeaderChannel.shutdownNow();
 
     }
@@ -156,7 +161,7 @@ public class ClientMachine {
             }
         }
 
-        logger.info("Finish : " +  timer_start + " : " + System.currentTimeMillis());
+        logger.info("Finish : " +  timer_start + " : " + System.currentTimeMillis() + " took:: "+ (System.currentTimeMillis() - timer_start) );
 
     }
 }

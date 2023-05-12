@@ -46,7 +46,7 @@ public class RaftServer {
         RaftConsensusService raftConsensusService = new RaftConsensusService(raftServer);
         logger.debug("[Sys Args] "+args.toString());
 
-        StorageState storageState = new StorageState(levelDB, 10097360);     // 5MB
+        StorageState storageState = new StorageState(levelDB, 100973600);     // 5MB
         UtilizationService utilizationService = new UtilizationService(raftServer, storageState);
         LoadBalancerService loadBalancerService = new LoadBalancerService(raftServer);
         io.grpc.Server server = ServerBuilder.forPort(Integer.parseInt(args[1]))
