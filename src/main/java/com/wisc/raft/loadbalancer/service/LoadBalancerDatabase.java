@@ -80,7 +80,7 @@ public class LoadBalancerDatabase {
 //                cacheEntry.get(logEntry.getCommand().getKey()) == logEntry.get
 //            }
 //            cacheEntry.remove(logEntry.getCommand().getKey());
-            logger.info("[commit] removed entry : " + logEntry.getCommand().getKey());
+            logger.debug("[commit] removed entry : " + logEntry.getCommand().getKey());
             if (Objects.isNull(keyBytes)) {
                 logger.error("[LbDatabase] LogEntry cannot not be serialized");
                 return 1;

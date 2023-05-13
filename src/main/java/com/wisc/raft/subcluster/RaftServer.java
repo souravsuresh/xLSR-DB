@@ -27,7 +27,8 @@ public class RaftServer {
     */
     public static void main(String[] args) throws IOException, InterruptedException {
         logger.info("[RaftServer] Starting the main server!!");
-        String levelDB = "./leveldb_"+args[1]+"_"+random.nextInt(100)+"_"+args[0];
+//        String levelDB = "./leveldb_"+args[1]+"_"+random.nextInt(100)+"_"+args[0];
+        String levelDB = "./leveldb_"+args[1];
         logger.info("LevelDB folder :: "+levelDB);
         Database database = new Database(levelDB);
         List<Raft.ServerConnect> serverList = new ArrayList<>();
@@ -46,7 +47,7 @@ public class RaftServer {
         RaftConsensusService raftConsensusService = new RaftConsensusService(raftServer);
         logger.debug("[Sys Args] "+args.toString());
 
-        StorageState storageState = new StorageState(levelDB, 100973600);     // 5MB
+        StorageState storageState = new StorageState(levelDB, 5097360);     // 5MB
         UtilizationService utilizationService = new UtilizationService(raftServer, storageState);
         LoadBalancerService loadBalancerService = new LoadBalancerService(raftServer);
         io.grpc.Server server = ServerBuilder.forPort(Integer.parseInt(args[1]))

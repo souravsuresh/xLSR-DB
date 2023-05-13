@@ -100,7 +100,10 @@ public class NodeState {
         this.utilizationMap = new ConcurrentSkipListMap<>(new Comparator<Integer>() {
             @Override
             public int compare(Integer o1, Integer o2) {
-                return (int) (utilizationMap.get(o1) - utilizationMap.get(o2));
+                if(utilizationMap.containsKey(o1) && utilizationMap.containsKey(o2)) {
+                    return (int) (utilizationMap.get(o1) - utilizationMap.get(o2));
+                }
+                return 0;
             }
         });
 

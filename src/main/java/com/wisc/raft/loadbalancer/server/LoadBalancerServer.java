@@ -167,7 +167,7 @@ public class LoadBalancerServer {
 
 
             if(this.state.getLoadBalancerEntries().get(clusterIndex).size() == 0) {
-                logger.info("[checkAndCommitFromLoadBalancerProcessor] Nothing to commit from LB to DB");
+                logger.debug("[checkAndCommitFromLoadBalancerProcessor] Nothing to commit from LB to DB");
                 return;
             }
             if(this.state.getLastLoadBalancerCommitIndex().get(clusterIndex) > this.state.getLastLoadBalancerProcessed().get(clusterIndex)) {
@@ -714,7 +714,7 @@ public class LoadBalancerServer {
 //        logger.debug("[preCall] Snapshot :: "+this.state.getLoadBalancerSnapshot().get(0));
         String key = String.valueOf(request.getKey());
         if(subClusterList.isEmpty()){
-            log.error("[preCall] wait for your turn you little shit");
+            log.error("[preCall] Sub cluster list is empty");
             return -5;
         }
         /*if(db.getCacheEntry().containsKey(key) && request.getCommandType().equals("READ")){
@@ -793,7 +793,7 @@ public class LoadBalancerServer {
             //TODO
             int clusterToBeSent = this.getState().getUtilizationMap().isEmpty() ? 0 : this.getState().getUtilizationMap().firstKey();
             //AddToTheQueue
-            logger.info("[populateSubclusters] cluster sent are : " + clusterToBeSent);
+            logger.debug("[populateSubclusters] cluster sent are : " + clusterToBeSent);
             Raft.LogEntry le = Raft.LogEntry.newBuilder().setCommand(
                             Raft.Command.newBuilder().setCommandType("WRITE")
                                     .setValue(String.valueOf(v))
@@ -867,6 +867,7 @@ public class LoadBalancerServer {
             }
             logger.info("[initiateLiveLinessProbesRPC] CLuster usage :: " +  sum / subClusterList.size() );
             if (sum / subClusterList.size() > 80) {
+                logger.info("[initiateLiveLinessProbesRPC] scaling up cluster as threashold is breached :: "+ (sum / subClusterList.size()));
                 scaleUp();
             }
         }
@@ -904,13 +905,14 @@ public class LoadBalancerServer {
                 }
             } finally {
                 lock.unlock();
+                channel.shutdownNow();
             }
         }
     }
 
     public int sendReadCalls(Client.Request request){
         String key = request.getKey();
-        logger.debug("[sendReadCalls] : "  + Objects.isNull((db.getCacheEntry().getOrDefault(key, null))) + " : " + key +  "db.getCacheEntry()) " + db.getCacheEntry());
+        logger.debug("[sendReadCalls] : " + key +  "db.getCacheEntry()) " + db.getCacheEntry());
 //        lock.lock();
         try {
             logger.debug("[sendReadCalls] Entries :: "+ db.getCacheEntry());
@@ -946,6 +948,7 @@ public class LoadBalancerServer {
 
             }
             ReadLBObject readLBObject = db.read(String.valueOf(key));
+            logger.info("[sendReadCalls] Read Obj:: Key -> "+key+" VAL -> "+readLBObject.getReturnVal()+" Version -> "+readLBObject.getVersionNumber());
             int retValue = readLBObject.getReturnVal();
 
             if (retValue < 0) {
@@ -954,7 +957,7 @@ public class LoadBalancerServer {
             }
             int versionNumber = readLBObject.getVersionNumber();
             logger.debug("[sendReadCalls] After Entries :: "+ db.getCacheEntry());
-            if (versionNumber == 0) {
+            if (true || versionNumber == 0) {
                 logger.error("[sendReadCalls] Failed for something else : " + key);
                 return -1;
             }

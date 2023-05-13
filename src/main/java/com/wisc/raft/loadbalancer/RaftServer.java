@@ -33,7 +33,8 @@ public class RaftServer {
     */
     public static void main(String[] args) throws IOException, InterruptedException {
         logger.info("[RaftServer] Starting the main server!!");
-        String levelDB = "./leveldb_"+random.nextInt(100);
+//        String levelDB = "./leveldb_"+random.nextInt(100);
+        String levelDB = "./leveldb_"+args[1];
         logger.info("LevelDB folder :: "+levelDB);
         LoadBalancerDatabase database = new LoadBalancerDatabase(levelDB);
         List<Raft.ServerConnect> serverList = new ArrayList<>();

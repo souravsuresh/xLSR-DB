@@ -83,7 +83,7 @@ public class LoadBalancerService extends LoadBalancerRequestServiceGrpc.LoadBala
                     server.putValue(entry);
                 }
             }
-            logger.info("[LoadBalancerSendEntries] Snapshot after adding entries :: "+ this.server.getState().getSnapshot());
+            logger.debug("[LoadBalancerSendEntries] Snapshot after adding entries :: "+ this.server.getState().getSnapshot());
             request.getEntriesList().forEach(ent -> {
                 responseBuilder.addSuccess(true);
             });

@@ -78,7 +78,7 @@ public class ServerClientConnectionService extends ServerClientConnectionGrpc.Se
             logger.debug("[interact] Can perform either operation ");
             long ret = server.preCall(request);
             if(ret > 0){
-                logger.info("[interact] check + " + ret);
+                logger.debug("[interact] check + " + ret);
                 response = Client.Response.newBuilder().setSuccess(true).setValue(ret).build();
             }
         }

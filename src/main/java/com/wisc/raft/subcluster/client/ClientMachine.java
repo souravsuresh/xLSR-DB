@@ -22,59 +22,35 @@ public class ClientMachine {
         int appends =  Integer.parseInt(args[2]);
         io.grpc.Server server = ServerBuilder.forPort(Integer.parseInt(args[4])).addService(clientService).build();
         server.start();
-        long start = System.currentTimeMillis();
-//        appendSomeEntries(args);
-//        long mid = System.currentTimeMillis();
-//        long cp1 = mid-start;
-//        int iter = 0;
-//        while(clientService.getCount() != appends){
-//            iter += 1;
-//            Thread.sleep(100);
-//        }
-//        logger.info("Done for the day!! "+iter);
-//        logger.info("Finish");
-//        long cp2 = System.currentTimeMillis() - start;
-//        logger.info(cp1 + " : " + cp2);
-        appendSomeEntries(args);
-//        loop(args);
+        switch (args[6]) {
+            case "write":
+                write(args);
+                break;
+            case "read":
+                read(args);
+                break;
+            case "writeread":
+                writeread(args);
+                break;
+            default:
+                logger.info("Current supported methods are write/read/writeread");
+        }
         server.shutdownNow();
     }
 
-    private static void appendSomeEntries(String[] args) throws InterruptedException {
+    private static void write(String[] args) throws InterruptedException {
         logger.info(args[0] + " : " + args[1]);
-        //ManagedChannel channel = ManagedChannelBuilder.forAddress(args[0], Integer.parseInt(args[1])).usePlaintext().build();
-        //ServerClientConnectionGrpc.ServerClientConnectionBlockingStub serverClientConnectionBlockingStub = ServerClientConnectionGrpc.newBlockingStub(channel);
-        //Client.MetaDataRequest metaDataRequest = Client.MetaDataRequest.newBuilder().setReqType("LEADER_CONNECT").build();
-        String leaderHost;
-        int leaderPort;
-//        while (true) {
-//            //Shit design - Need to do something else
-//            Client.MetaDataResponse metaDataResponse = serverClientConnectionBlockingStub.getLeader(metaDataRequest);
-//            if (metaDataResponse.getSuccess()) {
-//                leaderHost = metaDataResponse.getHost();
-//                leaderPort = metaDataResponse.getPort();
-//                logger.info(leaderHost + " : Leader Info : " + leaderPort);
-//                break;
-//            } else {
-//                logger.debug("Going to sleep :"  + metaDataResponse);
-//                sleep(500);
-//            }
-//        }
-//
-//        channel.shutdownNow();
-
-
         ManagedChannel LeaderChannel = ManagedChannelBuilder.forAddress(args[0],  Integer.parseInt(args[1])).usePlaintext().build();
         ServerClientConnectionGrpc.ServerClientConnectionBlockingStub serverClientConnectionBlockingStubLeader = ServerClientConnectionGrpc.newBlockingStub(LeaderChannel);
         int numberOfAppends = Integer.parseInt(args[2]);
-        int key = 0;
-        int val = 310;
         Client.Endpoint endpoint = Client.Endpoint.newBuilder().setPort(Integer.parseInt(args[4])).setHost(args[3]).build();
         logger.info("Starting the requests at :: "+ System.currentTimeMillis());
         long start = System.currentTimeMillis();
         for (int i = 0; i < numberOfAppends; i++) {
             //TODO put to const
-            Client.Request request = Client.Request.newBuilder().setCommandType("WRITE").setKey(String.valueOf(i)).setValue(String.valueOf(i*20)).setEndpoint(endpoint).build();
+            int key = 10000;
+            int val = 10000;
+            Client.Request request = Client.Request.newBuilder().setCommandType("WRITE").setKey(String.valueOf(key)).setValue(String.valueOf(val)).setEndpoint(endpoint).build();
             try {
                 Client.Response response = serverClientConnectionBlockingStubLeader.interact(request);
                 if (response.getSuccess()) {
@@ -83,84 +59,86 @@ public class ClientMachine {
                 } else {
                     logger.warn("Failed : " + i + " : ");
                 }
-                key++;
-                val++;
             } catch (Exception e) {
                 logger.error("Something went wrong : Please check : " + e);
             }
 
         }
-        key = 10;
-        val = 130;
         logger.info("Write Took :: "+ (System.currentTimeMillis() - start));
-
-//        long readstart = System.currentTimeMillis();
-//        for (int i = 0; i < numberOfAppends; i++) {
-//            //TODO put to const
-//            Client.Request request = Client.Request.newBuilder().setCommandType("READ").setKey(String.valueOf(i)).setEndpoint(endpoint).build();
-//            try {
-//                Client.Response response = serverClientConnectionBlockingStubLeader.interact(request);
-//                if (response.getSuccess()) {
-//
-//                    logger.debug("Accepted : " + i + " value :: " + response.getValue());
-//                } else {
-//                    logger.warn("Failed : " + i);
-//                }
-//
-////                sleep(50);
-////                key++;
-//
-//            } catch (Exception e) {
-//                logger.error("Something went wrong : Please check : " + e);
-//            }
-//
-//        }
-//        logger.info("Read Took :: "+ (System.currentTimeMillis() - readstart));
-//        logger.info("Finished the requests at :: "+ System.currentTimeMillis());
-//        logger.info("Total :: "+ (System.currentTimeMillis() - start));
+        logger.info("Finished the requests at :: "+ System.currentTimeMillis());
+        logger.info("Total :: "+ (System.currentTimeMillis() - start));
         LeaderChannel.shutdownNow();
 
     }
 
-    public static void loop(String[] args) throws InterruptedException{
+    private static void read(String[] args) throws InterruptedException {
+        logger.info(args[0] + " : " + args[1]);
         ManagedChannel LeaderChannel = ManagedChannelBuilder.forAddress(args[0],  Integer.parseInt(args[1])).usePlaintext().build();
         ServerClientConnectionGrpc.ServerClientConnectionBlockingStub serverClientConnectionBlockingStubLeader = ServerClientConnectionGrpc.newBlockingStub(LeaderChannel);
         int numberOfAppends = Integer.parseInt(args[2]);
-        int key = 100;
-        int val = 300;
+        Client.Endpoint endpoint = Client.Endpoint.newBuilder().setPort(Integer.parseInt(args[4])).setHost(args[3]).build();
+        logger.info("Starting the requests at :: "+ System.currentTimeMillis());
+        long start = System.currentTimeMillis();
+        for (int i = 0; i < numberOfAppends; i++) {
+            //TODO put to const
+            int key = 10000;
+            int val = 10000;
+            Client.Request request = Client.Request.newBuilder().setCommandType("READ").setKey(String.valueOf(key)).setEndpoint(endpoint).build();
+            try {
+                Client.Response response = serverClientConnectionBlockingStubLeader.interact(request);
+                if (response.getSuccess()) {
+                    logger.debug("Accepted : " + i + " value :: " + response.getValue());
+                } else {
+                    logger.warn("Failed : " + i);
+                }
+            } catch (Exception e) {
+                logger.error("Something went wrong : Please check : " + e);
+            }
+
+        }
+        logger.info("Read Took :: "+ (System.currentTimeMillis() - start));
+        logger.info("Finished the requests at :: "+ System.currentTimeMillis());
+        LeaderChannel.shutdownNow();
+    }
+
+
+    public static void writeread(String[] args) throws InterruptedException{
+        ManagedChannel LeaderChannel = ManagedChannelBuilder.forAddress(args[0],  Integer.parseInt(args[1])).usePlaintext().build();
+        ServerClientConnectionGrpc.ServerClientConnectionBlockingStub serverClientConnectionBlockingStubLeader = ServerClientConnectionGrpc.newBlockingStub(LeaderChannel);
+        int numberOfAppends = Integer.parseInt(args[2]);
         Client.Endpoint endpoint = Client.Endpoint.newBuilder().setPort(Integer.parseInt(args[4])).setHost(args[3]).build();
         long timer_start =  System.currentTimeMillis();
 
         for(int i=0;i<numberOfAppends;i++) {
-            key++;
-            val++;
-            Client.Request request = Client.Request.newBuilder().setCommandType("WRITE").setKey(String.valueOf(key)).setValue(String.valueOf(val)).setEndpoint(endpoint).build();
+            Client.Request request = Client.Request.newBuilder().setCommandType("WRITE").setKey(String.valueOf(i*10000)).setValue(String.valueOf(i*10000)).setEndpoint(endpoint).build();
             Client.Response response = serverClientConnectionBlockingStubLeader.interact(request);
+            logger.info("Write took "+ (System.currentTimeMillis() - timer_start));
             long l = System.currentTimeMillis();
 
             if (response.getSuccess()) {
                 int count = 0;
                 while (true) {
                     try {
-                        ManagedChannel LeaderChannel1 = ManagedChannelBuilder.forAddress(args[0], Integer.parseInt(args[1])).usePlaintext().build();
-                        Client.Request request1 = Client.Request.newBuilder().setCommandType("READ").setKey(String.valueOf(key)).setEndpoint(endpoint).build();
-                        if (response.getSuccess()) {
-                            logger.info(String.valueOf(System.currentTimeMillis() - l));
+                        Client.Request read_req = Client.Request.newBuilder().setCommandType("READ").setKey(String.valueOf(i*10000)).setEndpoint(endpoint).build();
+                        Client.Response read_response = serverClientConnectionBlockingStubLeader.interact(read_req);
+                        if (read_response.getSuccess()) {
+                            logger.debug("Accepted : " + i*10000 + " value :: " + read_response.getValue());
+                            logger.info("Write Read of "+(i*10000)+" took "+ (System.currentTimeMillis() - l));
                             break;
                         } else {
-                            logger.debug("Failed ");
-                        }
-                        count++;
-                        if (count == 100) {
-                            break;
+                            logger.warn("Failed : " + i);
                         }
                     } catch (Exception e) {
                         logger.error("Something went wrong : Please check : " + e);
                     }
+                    count++;
+                    if (count >= 100) {
+                        logger.info("Threshold breached!! Breaking");
+                        break;
+                    }
                 }
             }
         }
-
         logger.info("Finish : " +  timer_start + " : " + System.currentTimeMillis() + " took:: "+ (System.currentTimeMillis() - timer_start) );
 
     }
