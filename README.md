@@ -4,7 +4,7 @@ In this project, we propose building a replicated distributed database. The basi
 
 Once server is buily, we will use a consensus algorithm to build a replicated database service. In this project, we will build this approach leveraging RAFT [1]. We'll then demonstrate how our approach handles failures, and aspects of its performance and scalability. 
 
-Report can be found at : [a relative link](xLSR-DB.pdf)
+Report can be found at : [xLSR-DB Report](xLSR-DB.pdf)
 
 ### Demonstration
 -----
