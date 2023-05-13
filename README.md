@@ -1,22 +1,10 @@
-# ReplicatedDB
+# xLSR-DB: eXtensible Large Scale Replicated DataBase solution
 
-In this project, you’ll be building a replicated distributed database. You’ll apply knowledge you have learned in class to build a system that works despite failure of servers. Fun!
+In this project, we propose building a replicated distributed database. The basic idea will be to first build a simple server. We choose to build a replicated database from existing libraries, like LevelDB or Memcached or SQLite. 
 
-The basic idea will be to first build a simple server. Here, you have some options. The most basic is to build a simple key/value storage system (details below). But, you can also instead choose to build a replicated database from existing libraries, like LevelDB or Memcached or SQLite. 
+Once server is buily, we will use a consensus algorithm to build a replicated database service. In this project, we will build this approach leveraging RAFT [1]. We'll then demonstrate how our approach handles failures, and aspects of its performance and scalability. 
 
-Once you have built a server, you will use a consensus algorithm to build a replicated database service. In this project, you will build this approach by hand, choosing either Raft [1] or Paxos [2] or Viewstamped Replication [3]; these are all pretty similar approaches [4, 5].
-
-You’ll then demonstrate how your approach handles failures, and aspects of its performance. 
-
-### Details
--------
-The first thing to do is to build a simple server. The simplest path is likely a get/put key-value storage system. The interface should be simple, such as “put(key, value)” and “get(key)”; the server can simply keep these values in memory.
-
-Your server should take, as input, a simple RPC interface which sends over get/put commands. Don’t worry about security for this project; as such, anyone will be able to connect to the database and run queries against it.
-
-Once you have a basic client/server setup working, you will layer in a consensus approach to build a strongly consistent [6] replicated database. Very likely, this will include having the servers, when they start, elect a leader. A client will then connect to that leader (or, if connected to another server, be redirected to the leader) to send a request to the service; the servers will then follow the protocol of choice to perform the action in the style of a replicated state machine; finally, an answer to the query will be sent back to the clients. Exact details of how exactly you do all of these things is left up to you.
-
-Options: Instead of building your own simple server, build one using LevelDBLinks to an external site., RocksDBLinks to an external site., SQLiteLinks to an external site., MemcachedLinks to an external site., or something similar. This provides an extra challenge! But, you may be rewarded: Most impressive project will win the “Best Project” prize - fame, glory, and a T-shirt!
+Report can be found at : [a relative link](xLSR-DB.pdf)
 
 ### Demonstration
 -----
@@ -32,10 +20,19 @@ A more advanced project will implement features such as membership change; howev
 ```mvn clean install```
 
 2. Spin up the servers. (We can change the port numbers and hostnames accrodingly).
+
+Subcluster:
+
 ```
 mvn exec:java -Dexec.mainClass="com.wisc.raft.subcluster.RaftServer" -Dexec.args="1 8082 0_localhost_8081 1_localhost_8082 2_localhost_8083"
 ```
+
+LoadBalancer:
+
 ```
+mvn exec:java -Dexec.mainClass="com.wisc.raft.loadbalancer.RaftServer" -Dexec.args="1 8082 0_localhost_8081 1_localhost_8082 2_localhost_8083"
+```
+
 Exaplanation of params:
 -----------------------------
 args[0] = current Server ID
@@ -43,18 +40,26 @@ args[1] = current Server Port
 args[2] = space seperated id_hostname_port covering all node details in cluster (including the current one).
 ```
 
+AutoScaler
+
+```
+mvn exec:java -Dexec.mainClass="com.wisc.raft.autoscaler.AutoScalerMain" 
+```
+
 3. [Optional] We can run client simulation script to simulate the writes.
 ```
-mvn exec:java -Dexec.mainClass="client.com.wisc.raft.subcluster.ClientMachine" -Dexec.args="localhost 8082 1000 localhost 9000"
+mvn exec:java -Dexec.mainClass="client.com.wisc.raft.subcluster.ClientMachine" -Dexec.args="localhost 9091 100000 _ 50000 500 write"
 ```
+
 ```
 Explanation of params:
 -----------------------------
 args[0] = server hostname (can be any node in cluster <leader/follower>)
 args[1] = server port
-args[2] = number of operation
+args[2] = number of operations
 args[3] = client hostname
 args[4] = client port
+args[6] = operations (write/ read/ writeread)
 ```
 
 
