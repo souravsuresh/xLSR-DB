@@ -2,7 +2,7 @@
 
 In this project, we propose building a replicated distributed database. The basic idea will be to first build a simple server. We choose to build a replicated database from existing libraries, like LevelDB or Memcached or SQLite. 
 
-Once server is buily, we will use a consensus algorithm to build a replicated database service. In this project, we will build this approach leveraging RAFT [1]. We'll then demonstrate how our approach handles failures, and aspects of its performance and scalability. 
+Once server is built, we will use a consensus algorithm to build a replicated database service. In this project, we will build this approach leveraging RAFT [1]. We'll then demonstrate how our approach handles failures, and aspects of its performance and scalability. 
 
 Report can be found at : [xLSR-DB Report](xLSR-DB.pdf)
 
