@@ -49,7 +49,6 @@ public class AutoScaleService extends AutoScaleGrpc.AutoScaleImplBase {
             int count = request.getClusterSize();
             for(int i=0;i<count;i++){
                 logger.info("Please enter 1 cluster details in a single line, With leader details first");
-//                String clusterString = scanner.nextLine();  // 0_localhost_9000_
                 String clusterString = getClusterDetails();  // 0_localhost_9000_
                 String[] s = clusterString.split("_");
                 Configuration.ServerDetails.Builder serverDetailsBuilder = Configuration.ServerDetails.newBuilder();

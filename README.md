@@ -1,50 +1,40 @@
 # xLSR-DB: eXtensible Large Scale Replicated DataBase solution
 
-In this project, we propose building a replicated distributed database. The basic idea will be to first build a simple server. We choose to build a replicated database from existing libraries, like LevelDB or Memcached or SQLite. 
-
-Once server is built, we will use a consensus algorithm to build a replicated database service. In this project, we will build this approach leveraging RAFT [1]. We'll then demonstrate how our approach handles failures, and aspects of its performance and scalability. 
-
-Report can be found at : [xLSR-DB Report](xLSR-DB.pdf)
-
-### Demonstration
------
-A working project will demonstrate successful basic functionality under no failures, and successful operation under some number of server failures. A successful project will also demonstrate some of the performance characteristics of the system that was built; a good example of performance evaluation is found in the EPaxos paper [7]. Please note down your design decisions and justify them as well. 
-
-Testing correctness is naturally difficult for Raft, Paxos, and the like. Please consider how you will do so carefully, and make this discussion part of your final presentation. 
-
-A more advanced project will implement features such as membership change; however, this is not required and probably only needed for those shooting for the “best project” prize.
+This research project focuses on designing a extensible large Scale storage solution leveraging Raft consensus algorithm to build a cloud native replicated database system using LevelDB as the backend datastore. The proposed algorithm is an adaptive version that has flexibility to autoscale the system and also batches requests to improve overall system throughput. Communication between nodes is achieved using gRPC. The main objective of this study is to demonstrate the effectiveness of build a large scale storage systems which work efficiently in Cloud Environments where the scalability is one of the huge factor.
 
 ### Installation
 ----
 1. Build the project
-```mvn clean install```
+```
+mvn clean install
+```
 
 2. Spin up the servers. (We can change the port numbers and hostnames accrodingly).
 
-Subcluster:
+    **Subcluster:**
 
-```
-mvn exec:java -Dexec.mainClass="com.wisc.raft.subcluster.RaftServer" -Dexec.args="1 8082 0_localhost_8081 1_localhost_8082 2_localhost_8083"
-```
+    ```
+    mvn exec:java -Dexec.mainClass="com.wisc.raft.subcluster.RaftServer" -Dexec.args="1 8082 0_localhost_8081 1_localhost_8082 2_localhost_8083"
+    ```
 
-LoadBalancer:
+    **LoadBalancer:**
 
-```
-mvn exec:java -Dexec.mainClass="com.wisc.raft.loadbalancer.RaftServer" -Dexec.args="1 8082 0_localhost_8081 1_localhost_8082 2_localhost_8083"
-```
+    ```
+    mvn exec:java -Dexec.mainClass="com.wisc.raft.loadbalancer.RaftServer" -Dexec.args="1 8082 0_localhost_8081 1_localhost_8082 2_localhost_8083"
+    ```
+    ```
+    Exaplanation of params:
+    -----------------------------
+    args[0] = current Server ID
+    args[1] = current Server Port
+    args[2] = space seperated id_hostname_port covering all node details in cluster (including the current one).
+    ```
 
-Exaplanation of params:
------------------------------
-args[0] = current Server ID
-args[1] = current Server Port
-args[2] = space seperated id_hostname_port covering all node details in cluster (including the current one).
-```
+    **AutoScaler:**
 
-AutoScaler
-
-```
-mvn exec:java -Dexec.mainClass="com.wisc.raft.autoscaler.AutoScalerMain" 
-```
+    ```
+    mvn exec:java -Dexec.mainClass="com.wisc.raft.autoscaler.AutoScalerMain" 
+    ```
 
 3. [Optional] We can run client simulation script to simulate the writes.
 ```
@@ -62,20 +52,7 @@ args[4] = client port
 args[6] = operations (write/ read/ writeread)
 ```
 
+*Note: This is developed as extension over our base version of [Replicated Database using Raft](https://github.com/souravsuresh/ReplicatedDB)*
 
-
-### References
------
-[1] https://web.stanford.edu/~ouster/cgi-bin/papers/raft-atc14Links to an external site.
-
-[2] https://lamport.azurewebsites.net/pubs/paxos-simple.pdfLinks to an external site.
-
-[3] https://pmg.csail.mit.edu/papers/vr-revisited.pdfLinks to an external site.
-
-[4] https://ellismichael.com/blog/2017/02/28/raft-equivalency/Links to an external site.
-
-[5] http://mpaxos.com/pub/raft-paxos.pdfLinks to an external site.
-
-[6] https://en.wikipedia.org/wiki/Strong_consistencyLinks to an external site.
-
-[7] https://www.usenix.org/system/files/nsdi21-tollman.pdfLinks to an external site.
+<!-- 
+Report can be found at : [xLSR-DB Report](xLSR-DB.pdf) -->

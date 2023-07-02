@@ -75,11 +75,6 @@ public class LoadBalancerDatabase {
             List<Pair<Integer, Integer>> listOfVersion = readPair(logEntry.getCommand().getKey());
             listOfVersion.add(new Pair<>(logEntry.getCommand().getVersion(), logEntry.getClusterId()));
             byte[] object = serialize(listOfVersion);
-            //
-//            if(cacheEntry.containsKey(logEntry.getCommand().getKey())){
-//                cacheEntry.get(logEntry.getCommand().getKey()) == logEntry.get
-//            }
-//            cacheEntry.remove(logEntry.getCommand().getKey());
             logger.debug("[commit] removed entry : " + logEntry.getCommand().getKey());
             if (Objects.isNull(keyBytes)) {
                 logger.error("[LbDatabase] LogEntry cannot not be serialized");
